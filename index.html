@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="格物 · 物理解题动画助手：上传物理题照片或直接提问，AI 区分题干与提问，生成物理上正确的可交互动画、参数讲解与分步题解。" />
+    <meta name="theme-color" content="#ffffff" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230e1a2b'/%3E%3Cpath d='M10 50 Q32 6 54 50' fill='none' stroke='%23ff5c93' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='28' r='5' fill='%232ee6cf'/%3E%3C/svg%3E"
+    />
+    <title>格物 · 物理解题动画助手</title>
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem("gewu-prefs-v2");
+          var theme = raw ? (JSON.parse(raw).theme || "light") : "light";
+          var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.dataset.theme = dark ? "dark" : "light";
+          document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        } catch (e) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

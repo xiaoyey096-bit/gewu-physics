@@ -1,0 +1,307 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../vendor/shadcn-tailwind-4.13.0.css";
+
+/* 交接文档里的 Windows 绝对路径（如 …\af146af7-…）会被 Tailwind 的类名扫描器当成 CSS 十六进制
+   转义解析，报 Invalid code point，因此把 docs 排除在内容扫描之外。 */
+@source not "../docs/**/*";
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
+
+:root {
+  --site-bg: #f8f9fb;
+  --site-surface: #ffffff;
+  --site-surface-2: #f0f2f5;
+  --site-fg: #242830;
+  --site-muted: #727985;
+  --site-border: #e4e7ec;
+  --site-accent: #303846;
+  --site-on-accent: #ffffff;
+  --site-font: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --site-radius: 12px;
+  --site-space: 1;
+  --site-type: 1;
+  --site-motion: 1;
+
+  --gw-vx: #00857a;
+  --gw-vy: #b45309;
+  --gw-v: #c81e5a;
+  --gw-grid: #e3e7ee;
+  --gw-info: #2f6df6;
+  --gw-success: #3f8f29;
+  --gw-warning: #b45309;
+  --gw-danger: #d92d20;
+  --gw-scrim: rgba(22, 35, 58, 0.45);
+
+  --background: var(--site-bg);
+  --foreground: var(--site-fg);
+  --card: var(--site-surface);
+  --card-foreground: var(--site-fg);
+  --popover: var(--site-surface);
+  --popover-foreground: var(--site-fg);
+  --primary: var(--site-accent);
+  --primary-foreground: var(--site-on-accent);
+  --secondary: var(--site-surface-2);
+  --secondary-foreground: var(--site-fg);
+  --muted: var(--site-surface-2);
+  --muted-foreground: var(--site-muted);
+  --accent: var(--site-surface-2);
+  --accent-foreground: var(--site-fg);
+  --destructive: var(--gw-danger);
+  --border: var(--site-border);
+  --input: var(--site-border);
+  --ring: var(--site-accent);
+  --chart-1: var(--gw-v);
+  --chart-2: var(--gw-vx);
+  --chart-3: var(--gw-vy);
+  --chart-4: var(--gw-info);
+  --chart-5: var(--gw-success);
+  --radius: var(--site-radius);
+  --sidebar: var(--site-surface);
+  --sidebar-foreground: var(--site-fg);
+  --sidebar-primary: var(--site-accent);
+  --sidebar-primary-foreground: var(--site-on-accent);
+  --sidebar-accent: var(--site-surface-2);
+  --sidebar-accent-foreground: var(--site-fg);
+  --sidebar-border: var(--site-border);
+  --sidebar-ring: var(--site-accent);
+}
+
+:root[data-theme="dark"] {
+  --site-bg: #0e1a2b;
+  --site-surface: #15263c;
+  --site-surface-2: #1c3049;
+  --site-fg: #e8eef7;
+  --site-muted: #94a5be;
+  --site-border: #263c55;
+  --site-accent: #ff5c93;
+  --site-on-accent: #25090f;
+
+  --gw-vx: #2ee6cf;
+  --gw-vy: #fbbf24;
+  --gw-v: #ff5c93;
+  --gw-grid: #1e3348;
+  --gw-info: #6ea8ff;
+  --gw-success: #8ede4f;
+  --gw-warning: #f59e0b;
+  --gw-danger: #ff6b6b;
+  --gw-scrim: rgba(4, 10, 20, 0.62);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-vx: var(--gw-vx);
+  --color-vy: var(--gw-vy);
+  --color-v: var(--gw-v);
+  --color-info: var(--gw-info);
+  --color-success: var(--gw-success);
+  --color-warning: var(--gw-warning);
+  --color-danger: var(--gw-danger);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--site-font);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  --spacing: calc(0.25rem * var(--site-space));
+  --text-xs: calc(.75rem * var(--site-type));
+  --text-sm: calc(.875rem * var(--site-type));
+  --text-base: calc(1rem * var(--site-type));
+  --text-lg: calc(1.125rem * var(--site-type));
+  --text-xl: calc(1.25rem * var(--site-type));
+  --text-2xl: calc(1.5rem * var(--site-type));
+  --text-3xl: calc(1.875rem * var(--site-type));
+  --text-4xl: calc(2.25rem * var(--site-type));
+  --text-5xl: calc(3rem * var(--site-type));
+  --text-6xl: calc(3.75rem * var(--site-type));
+  --text-7xl: calc(4.5rem * var(--site-type));
+  --text-8xl: calc(6rem * var(--site-type));
+  --text-9xl: calc(8rem * var(--site-type));
+  --default-transition-duration: calc(150ms * var(--site-motion));
+}
+
+@layer base {
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    background: var(--site-bg);
+    color: var(--site-fg);
+    font-family: var(--site-font);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--site-accent) 32%, transparent);
+    color: var(--site-fg);
+  }
+
+  /* 滚动条按本站调色板自绘 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--site-muted) 55%, transparent) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: color-mix(in oklab, var(--site-surface-2) 60%, transparent);
+  }
+  *::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--site-muted) 50%, transparent);
+    border: 2px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--site-accent) 72%, transparent);
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  button, a, [role="button"] {
+    transition-duration: calc(150ms * var(--site-motion));
+  }
+
+  :focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--site-accent) 75%, transparent);
+    outline-offset: 2px;
+  }
+}
+
+/* 分层背景：坐标纸网格 + 多色光晕 + 颗粒 + 漂移抛物线 */
+.gw-board {
+  background-color: var(--site-bg);
+  background-image:
+    radial-gradient(110% 80% at 8% -12%, color-mix(in oklab, var(--gw-info) 18%, transparent), transparent 62%),
+    radial-gradient(85% 70% at 96% 4%, color-mix(in oklab, var(--site-accent) 16%, transparent), transparent 64%),
+    radial-gradient(90% 80% at 46% 116%, color-mix(in oklab, var(--gw-vx) 14%, transparent), transparent 62%),
+    linear-gradient(color-mix(in oklab, var(--gw-grid) 62%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--gw-grid) 62%, transparent) 1px, transparent 1px);
+  background-size: auto, auto, auto, 30px 30px, 30px 30px;
+}
+
+.gw-grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.055;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.gw-panel {
+  background: color-mix(in oklab, var(--site-surface) 92%, transparent);
+  border: 1px solid var(--site-border);
+}
+
+.gw-inset {
+  background: color-mix(in oklab, var(--site-surface-2) 55%, transparent);
+  border: 1px solid color-mix(in oklab, var(--site-border) 80%, transparent);
+}
+
+.gw-hairline {
+  background-image: linear-gradient(90deg, transparent, color-mix(in oklab, var(--site-accent) 45%, transparent), color-mix(in oklab, var(--gw-vx) 40%, transparent), transparent);
+}
+
+@keyframes gw-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+.gw-rise {
+  animation: gw-rise calc(520ms * var(--site-motion)) cubic-bezier(.22, .8, .28, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+
+@keyframes gw-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.gw-fade {
+  animation: gw-fade calc(400ms * var(--site-motion)) ease both;
+  animation-delay: var(--d, 0ms);
+}
+
+@keyframes gw-drift {
+  0% { transform: translate3d(-3%, 0, 0) scale(1.02); }
+  50% { transform: translate3d(3%, -1.5%, 0) scale(1.06); }
+  100% { transform: translate3d(-3%, 0, 0) scale(1.02); }
+}
+.gw-drift {
+  animation: gw-drift calc(26s * var(--site-motion)) ease-in-out infinite;
+}
+
+@keyframes gw-sweep {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+.gw-sweep {
+  animation: gw-sweep calc(7s * var(--site-motion)) ease-in-out infinite;
+}
+
+@keyframes gw-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.gw-blink {
+  animation: gw-blink calc(1.6s * var(--site-motion)) ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
