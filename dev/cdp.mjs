@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 export const BASE = process.env.BASE || "http://127.0.0.1:5174";
 export const LEFT = 'aside[aria-label="题库与当前题目"]';
-export const RIGHT = 'aside[aria-label="动画参数与讲解"]';
+export const RIGHT = 'aside[aria-label="动画参数与对话"]';
 export const ROW = 'button[aria-label^="题目 "][aria-label$=" 的操作"]';
 export const CANVAS = 'canvas[aria-label^="抛体运动动画"]';
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -224,6 +224,7 @@ export async function showLibrary(browser) {
   if (await browser.exists('button[aria-label="展开题库与题目栏"]')) await browser.click("展开题库与题目栏");
   else if (await browser.exists('button[aria-label="打开题库"]')) await browser.click("打开题库");
   const scope = await browser.exists(LEFT) ? LEFT : '[role="dialog"][data-state="open"]';
+  if (await browser.exists(`${scope} button[aria-label="返回题库"]`)) await browser.clickSelector(`${scope} button[aria-label="返回题库"]`);
   await browser.click("全部", `${scope} button`, { exact: true });
   await browser.wait(`document.querySelectorAll(${JSON.stringify(`${scope} ${ROW}`)}).length > 0`, "existing library rows");
   return scope;
@@ -245,7 +246,7 @@ export async function fold(browser, label) {
     const button = section?.querySelector('button[aria-expanded]');
     const panel = button && document.getElementById(button.getAttribute('aria-controls'));
     return {expanded:button?.getAttribute('aria-expanded'), heading:button?.querySelector('h2')?.textContent,
-      panel:!!panel, text:(panel?.textContent || '').trim(), composer:!!document.querySelector('input[aria-label="追加提问"]')?.getClientRects().length};
+      panel:!!panel?.getClientRects().length, text:(panel?.textContent || '').trim(), composer:!!document.querySelector('textarea[aria-label="追加提问"]')?.getClientRects().length};
   })()`);
 }
 

@@ -1,22 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  ArrowLeft,
   ChevronDown,
   ChevronRight,
-  Copy,
   Folder,
   FolderPlus,
   GripVertical,
   ListFilter,
   MoreHorizontal,
   Pencil,
-  Plus,
   Search,
   Trash2,
   X,
   ZoomIn,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -28,11 +26,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { copyText } from "@/lib/image";
 import { solveProjectile } from "@/lib/physics";
 import { filterSessions, sortSessions, useStore } from "@/lib/store";
-import { deriveTitle, kindLabel } from "@/lib/text";
+import { kindLabel } from "@/lib/text";
 import type { LibraryFilter, LibrarySort, ProjectRecord, SessionRecord } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ImageLightbox } from "./ImageLightbox";
@@ -43,22 +39,13 @@ const SOURCE_LABEL: Record<SessionRecord["source"], string> = {
   example: "示例题",
 };
 
-function relTime(ts: number): string {
-  const diff = Date.now() - ts;
-  if (diff < 60_000) return "刚刚";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
-  const d = new Date(ts);
-  return `${d.getMonth() + 1} 月 ${d.getDate()} 日`;
-}
-
 interface Props {
-  onNewProblem: () => void;
-  onOpenSession: (id: string) => void;
-  showCurrent?: boolean;
+  onOpenSession: (id: string, showProblem?: boolean) => void;
+  showProblem?: boolean;
+  onBackToLibrary: () => void;
 }
 
-export function LibraryPanel({ onNewProblem, onOpenSession, showCurrent = true }: Props) {
+export function LibraryPanel({ onOpenSession, showProblem = false, onBackToLibrary }: Props) {
   const {
     projects,
     sessions,
@@ -82,15 +69,8 @@ export function LibraryPanel({ onNewProblem, onOpenSession, showCurrent = true }
   const [dropTarget, setDropTarget] = useState<{ projectId: string; beforeId: string | null } | null>(null);
   const [renaming, setRenaming] = useState<{ kind: "project" | "session"; id: string; value: string } | null>(null);
   const [zoom, setZoom] = useState(false);
-  const [statementDraft, setStatementDraft] = useState("");
-  const [questionsDraft, setQuestionsDraft] = useState("");
   const [newProject, setNewProject] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setStatementDraft(activeSession?.problem.statement ?? "");
-    setQuestionsDraft(activeSession?.questions.join("\n") ?? "");
-  }, [activeSession?.id, activeSession?.problem.statement, activeSession?.questions]);
 
   const visible = useMemo(
     () => filterSessions(sortSessions(sessions, prefs.librarySort), prefs.libraryFilter, query),
@@ -107,28 +87,6 @@ export function LibraryPanel({ onNewProblem, onOpenSession, showCurrent = true }
     }
     return map;
   }, [projects, visible]);
-
-  const commitStatement = () => {
-    if (!activeSession) return;
-    const value = statementDraft.trim();
-    if (!value || value === activeSession.problem.statement) {
-      setStatementDraft(activeSession.problem.statement);
-      return;
-    }
-    updateSession(activeSession.id, {
-      problem: { ...activeSession.problem, statement: value },
-      title: deriveTitle(value, activeSession.problem.params),
-    });
-    toast.success("题目内容已更新", { duration: 1800 });
-  };
-
-  const commitQuestions = () => {
-    if (!activeSession) return;
-    const list = questionsDraft.split("\n").map((q) => q.trim()).filter(Boolean);
-    if (list.join("\n") === activeSession.questions.join("\n")) return;
-    updateSession(activeSession.id, { questions: list });
-    toast.success(`已保存 ${list.length} 条提问`, { duration: 1800 });
-  };
 
   const removeSessions = (ids: string[]) => {
     const removed = deleteSessions(ids);
@@ -187,93 +145,49 @@ export function LibraryPanel({ onNewProblem, onOpenSession, showCurrent = true }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {showCurrent && <details className="order-last shrink-0 border-t border-border p-3">
-        <summary className="cursor-pointer text-xs font-medium">编辑当前题目</summary>
-        <div className="mt-3 max-h-[42vh] overflow-y-auto">
-        <div className="mb-2 flex items-center gap-2">
-          <h2 className="text-xs font-semibold tracking-wide text-muted-foreground">当前题目</h2>
-          {activeSession && (
-            <Badge variant="outline" className="ml-auto px-1.5 text-[10px]">
+      {showProblem && activeSession && (
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="题目原文与图片">
+          <div className="flex shrink-0 items-center gap-2 border-b border-border p-3">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="返回题库"
+              onClick={() => { setZoom(false); onBackToLibrary(); }}
+            >
+              <ArrowLeft />
+            </Button>
+            <h2 className="text-sm font-semibold">题目</h2>
+            <span className="ml-auto text-[11px] text-muted-foreground">
               {SOURCE_LABEL[activeSession.source]}
-            </Badge>
-          )}
-        </div>
-        {activeSession ? (
-          <div className="flex flex-col gap-2.5">
-            {activeSession.image ? (
-              <button
-                type="button"
-                onClick={() => setZoom(true)}
-                className="group relative overflow-hidden rounded-lg border border-border"
-                aria-label="放大查看上传的题目照片"
-              >
-                <img src={activeSession.image} alt="上传的题目照片缩略图" className="h-24 w-full object-cover" />
-                <span className="absolute inset-0 grid place-items-center bg-black/45 opacity-0 transition-opacity group-hover:opacity-100">
-                  <span className="flex items-center gap-1 text-[11px] text-white"><ZoomIn className="size-3.5" /> 点击放大</span>
-                </span>
-              </button>
-            ) : (
-              <div
-                className="flex h-16 items-center justify-center rounded-lg font-mono text-xs text-white"
-                style={{ background: "linear-gradient(135deg, var(--gw-info), var(--site-accent))" }}
-              >
-                {kindLabel(activeSession.problem.params)} · 无图片
-              </div>
-            )}
-            <label className="flex flex-col gap-1">
-              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="size-1.5 rounded-full" style={{ background: "var(--gw-info)" }} />
-                题目内容（失焦即保存）
-              </span>
-              <Textarea
-                value={statementDraft}
-                rows={3}
-                aria-label="题目内容"
-                className="min-h-[72px] resize-y text-xs leading-relaxed"
-                onChange={(e) => setStatementDraft(e.target.value)}
-                onBlur={commitStatement}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="size-1.5 rounded-full" style={{ background: "var(--gw-vx)" }} />
-                你的问题（每行一条）
-              </span>
-              <Textarea
-                value={questionsDraft}
-                rows={2}
-                placeholder="还没有提问，可在会话下方追加"
-                aria-label="用户提问"
-                className="min-h-[56px] resize-y text-xs leading-relaxed"
-                onChange={(e) => setQuestionsDraft(e.target.value)}
-                onBlur={commitQuestions}
-              />
-            </label>
-            <div className="flex gap-1.5">
-              <Button
-                variant="outline"
-                size="xs"
-                onClick={async () => {
-                  const ok = await copyText(activeSession.problem.statement);
-                  toast[ok ? "success" : "error"](ok ? "题干已复制" : "复制失败，请手动选择文本");
-                }}
-              >
-                <Copy /> 复制题干
-              </Button>
-              <Button variant="ghost" size="xs" onClick={onNewProblem}>
-                <Plus /> 新题目
-              </Button>
-            </div>
+            </span>
           </div>
-        ) : (
-          <p className="rounded-lg gw-inset p-3 text-xs leading-relaxed text-muted-foreground">
-            还没有打开题目。从下方题库选一条，或回到入口上传新题。
-          </p>
-        )}
-        </div>
-      </details>}
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed [overflow-wrap:anywhere]">
+              {activeSession.problem.statement}
+            </p>
+            {activeSession.image && (
+              <figure className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => setZoom(true)}
+                  className="group relative block w-full overflow-hidden rounded-lg border border-border"
+                  aria-label="放大查看原始题目图片"
+                >
+                  <img src={activeSession.image} alt="原始题目图片" className="h-auto w-full object-contain" />
+                  <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded bg-black/60 px-2 py-1 text-[11px] text-white">
+                    <ZoomIn className="size-3.5" /> 点击放大
+                  </span>
+                </button>
+                <figcaption className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                  原始题目图片 · 暂不支持自动分离附图
+                </figcaption>
+              </figure>
+            )}
+          </div>
+        </section>
+      )}
 
-      <section className="flex min-h-0 flex-1 flex-col">
+      <section className={cn("min-h-0 flex-1 flex-col", showProblem && activeSession ? "hidden" : "flex")}>
         <div className="flex items-center gap-1.5 px-3 pt-3">
           <h2 className="text-xs font-semibold tracking-wide text-muted-foreground">题库</h2>
           <span className="font-mono text-[10px] text-muted-foreground">{sessions.length}</span>
@@ -299,6 +213,7 @@ export function LibraryPanel({ onNewProblem, onOpenSession, showCurrent = true }
         </div>
 
         <div className="flex flex-col gap-2 px-3 py-2">
+          <p className="text-[11px] text-muted-foreground">双击题目查看原文与图片</p>
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -466,7 +381,7 @@ export function LibraryPanel({ onNewProblem, onOpenSession, showCurrent = true }
         )}
       </section>
 
-      {activeSession?.image && (
+      {showProblem && activeSession?.image && (
         <ImageLightbox
           open={zoom}
           onOpenChange={setZoom}
@@ -491,7 +406,7 @@ interface GroupProps {
   renaming: { kind: "project" | "session"; id: string; value: string } | null;
   onRename: (value: { kind: "project" | "session"; id: string; value: string } | null) => void;
   onCommitRename: () => void;
-  onOpen: (id: string) => void;
+  onOpen: Props["onOpenSession"];
   onToggleSelected: (id: string) => void;
   onDelete: (ids: string[]) => void;
   onShift: (session: SessionRecord, dir: -1 | 1) => void;
@@ -548,9 +463,12 @@ function ProjectGroup(props: GroupProps) {
             onChange={(e) => props.onRename({ ...renaming, value: e.target.value })}
             onBlur={props.onCommitRename}
             onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter" || e.key === "Escape") e.preventDefault();
               if (e.key === "Enter") props.onCommitRename();
               if (e.key === "Escape") props.onRename(null);
             }}
+            onKeyUp={(e) => e.stopPropagation()}
           />
         ) : (
           <button
@@ -599,6 +517,7 @@ function ProjectGroup(props: GroupProps) {
         <ul className="ml-2 flex flex-col gap-0.5 border-l border-border pl-1.5">
           {items.map((session) => {
             const result = solveProjectile(session.problem.params);
+            const isRenaming = renaming?.kind === "session" && renaming.id === session.id;
             const isDropBefore = dropTarget?.projectId === project.id && dropTarget.beforeId === session.id;
             return (
               <li
@@ -650,8 +569,23 @@ function ProjectGroup(props: GroupProps) {
                   )}
                   <button
                     type="button"
-                    onClick={() => props.onOpen(session.id)}
-                    className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                    onClick={(e) => {
+                      if (!isRenaming && e.detail === 0 && e.target === e.currentTarget) {
+                        props.onOpen(session.id, true);
+                      }
+                    }}
+                    onDoubleClick={() => {
+                      if (!isRenaming) props.onOpen(session.id, true);
+                    }}
+                    onKeyDown={(e) => {
+                      if (!isRenaming && e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                        e.preventDefault();
+                        props.onOpen(session.id, true);
+                      }
+                    }}
+                    className="flex min-w-0 flex-1 items-start gap-2 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={`查看题目 ${session.title}`}
+                    title="双击题目查看原文与图片"
                     aria-current={activeId === session.id ? "true" : undefined}
                   >
                     {session.image ? (
@@ -665,20 +599,23 @@ function ProjectGroup(props: GroupProps) {
                       </span>
                     )}
                     <span className="min-w-0 flex-1">
-                      {renaming?.kind === "session" && renaming.id === session.id ? (
+                      {isRenaming ? (
                         <Input
                           autoFocus
                           value={renaming.value}
                           aria-label="题目标题"
                           className="h-6 text-xs"
                           onClick={(e) => e.stopPropagation()}
+                          onDoubleClick={(e) => e.stopPropagation()}
                           onChange={(e) => props.onRename({ ...renaming, value: e.target.value })}
                           onBlur={props.onCommitRename}
                           onKeyDown={(e) => {
                             e.stopPropagation();
+                            if (e.key === "Enter" || e.key === "Escape") e.preventDefault();
                             if (e.key === "Enter") props.onCommitRename();
                             if (e.key === "Escape") props.onRename(null);
                           }}
+                          onKeyUp={(e) => e.stopPropagation()}
                         />
                       ) : (
                         <span className="block truncate text-xs font-medium">{session.title}</span>
@@ -687,8 +624,6 @@ function ProjectGroup(props: GroupProps) {
                         <span>X {result.range.toFixed(1)}m</span>
                         <span>·</span>
                         <span>T {result.flightTime.toFixed(2)}s</span>
-                        <span>·</span>
-                        <span>{relTime(session.updatedAt)}</span>
                       </span>
                     </span>
                   </button>
@@ -698,14 +633,17 @@ function ProjectGroup(props: GroupProps) {
                         variant="ghost"
                         size="icon-xs"
                         aria-label={`题目 ${session.title} 的操作`}
-                        className="shrink-0 opacity-0 group-hover/item:opacity-100 data-[state=open]:opacity-100"
+                        className="shrink-0 opacity-0 group-hover/item:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100"
                       >
                         <MoreHorizontal />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-44" onCloseAutoFocus={onCloseAutoFocus}>
-                      <DropdownMenuItem onClick={() => props.onOpen(session.id)}>
+                      <DropdownMenuItem onClick={() => props.onOpen(session.id, false)}>
                         <ZoomIn /> 打开工作台
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => props.onOpen(session.id, true)}>
+                        <ZoomIn /> 查看题目
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => {

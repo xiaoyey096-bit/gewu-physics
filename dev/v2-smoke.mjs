@@ -1,4 +1,4 @@
-// Intake -> confirmation -> workspace, physics/canvas, folds/QA and real exports.
+// Intake -> confirmation -> workspace, physics/canvas, plain solution folds/right chat and real exports.
 import { mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { BASE, LEFT, RIGHT, CANVAS, runProbe, enterStudy, fold, canvasState, timeState, waitFor, sleep } from "./cdp.mjs";
@@ -50,30 +50,48 @@ await runProbe("v2-smoke", { port:9333, width:1440, height:900 }, async ({ brows
   let detail = await fold(browser, "详细讲解");
   check("solutionDefaultExpanded", solution.expanded === "true" && solution.panel && solution.heading === "题解", solution);
   check("detailDefaultCollapsed", detail.expanded === "false" && !detail.panel && detail.heading === "详解", detail);
-  check("localPhysicsResults", ["35.35", "5.10", "2.04"].every((value) => solution.text.includes(value)), solution.text);
-  check("noObsoleteTabs", !(await browser.exists('[role="tab"]')));
+  const solutionNumbers = (solution.text.match(/-?\d+(?:\.\d+)?/g) || []).map((value) => Number(value).toString());
+  check("localPhysicsResults", ["35.35", "5.10", "2.04"].every((value) => solutionNumbers.includes(Number(value).toString())), solution.text);
+  const tabs = await browser.evaluate(`[...document.querySelectorAll('[role="tab"]')].map((el) => ({text:el.textContent.trim(), right:!!el.closest(${JSON.stringify(RIGHT)})}))`);
+  check("onlyRightParameterAndChatTabs", tabs.length === 2 && tabs.every((tab) => tab.right) && tabs[0].text === "动画参数" && tabs[1].text === "对话", tabs);
+  check("noObsoleteTabs", !(await browser.exists('main[aria-label="题目学习会话"] [role="tab"], nav[aria-label="视图切换"]')));
+  for (const label of ["简要题解", "详细讲解"]) {
+    const block = await browser.evaluate(`(() => {
+      const section = document.querySelector('section[aria-label=${JSON.stringify(label)}]');
+      return {pre:section?.querySelectorAll('pre').length, obsolete:section?.querySelectorAll('article, a, [aria-label="过程讲解"], [aria-label="答疑"], [aria-label="问答记录"], [aria-label="追加提问"]').length};
+    })()`);
+    check(`${label}HasOnePlainBlock`, block.pre === 1 && block.obsolete === 0, block);
+  }
+  await browser.click('对话', '[role="tab"]', {exact:true});
+  check("rightChatComposerVisible", await browser.evaluate(`!!document.querySelector(${JSON.stringify(`${RIGHT} section[aria-label="题目对话"] textarea[aria-label="追加提问"]`)})?.getClientRects().length`));
   await browser.clickSelector('section[aria-label="简要题解"] > button[aria-expanded]');
   solution = await fold(browser, "简要题解");
+  detail = await fold(browser, "详细讲解");
   check("solutionCollapses", solution.expanded === "false" && !solution.panel, solution);
   check("composerSurvivesBothFolds", solution.composer && detail.composer);
   await browser.clickSelector('section[aria-label="简要题解"] > button[aria-expanded]');
-  check("solutionReopens", (await fold(browser, "简要题解")).panel);
+  solution = await fold(browser, "简要题解");
+  check("solutionReopens", solution.panel && solution.composer, solution);
   await browser.clickSelector('section[aria-label="详细讲解"] > button[aria-expanded]');
   detail = await fold(browser, "详细讲解");
-  check("detailContainsPhasesAndQA", detail.expanded === "true" && await browser.exists('section[aria-label="详细讲解"] [aria-label="过程讲解"]') && await browser.exists('section[aria-label="详细讲解"] [aria-label="答疑"]'), detail);
+  check("detailContainsTwoMethods", detail.expanded === "true" && detail.panel && detail.composer && ["① 分解运动法", "② 能量与分段运动法"].every((method) => detail.text.includes(method)), detail);
   await shot("04-folds.png");
   await browser.clickSelector('section[aria-label="详细讲解"] > button[aria-expanded]');
-  check("detailClosesAgain", !(await fold(browser, "详细讲解")).panel);
+  detail = await fold(browser, "详细讲解");
+  check("detailClosesAgain", detail.expanded === "false" && !detail.panel && detail.composer, detail);
   const question = "为什么 45° 射程最远？";
-  await browser.type('input[aria-label="追加提问"]', question);
+  await browser.type('textarea[aria-label="追加提问"]', question);
   await browser.clickSelector('button[aria-label="提交提问"]');
-  await browser.wait(`document.querySelector('section[aria-label="详细讲解"] > button')?.getAttribute('aria-expanded') === 'true'`, "submit opens detail");
+  await browser.wait(`[...document.querySelectorAll('section[aria-label="题目对话"] [aria-label="问答记录"]')].some((record) => record.querySelector('article[aria-label="用户提问"] p')?.textContent === ${JSON.stringify(question)} && record.querySelectorAll('article[aria-label="问题回答"] p').length > 1)`, "follow-up answer appears in chat");
   const answer = await browser.evaluate(`(() => {
-    const article = [...document.querySelectorAll('[aria-label="答疑"] article')].find((a) => a.querySelector('h4')?.textContent === ${JSON.stringify(question)});
-    return {question:article?.querySelector('h4')?.textContent, paragraphs:article?.querySelectorAll('p').length || 0, text:article?.textContent};
+    const record = [...document.querySelectorAll('section[aria-label="题目对话"] [aria-label="问答记录"]')].find((el) => el.querySelector('article[aria-label="用户提问"] p')?.textContent === ${JSON.stringify(question)});
+    const article = record?.querySelector('article[aria-label="问题回答"]');
+    return {question:record?.querySelector('article[aria-label="用户提问"] p')?.textContent, paragraphs:article?.querySelectorAll('p').length || 0, text:article?.textContent};
   })()`);
   check("followUpHasLocalAnswer", answer.question === question && answer.paragraphs > 1, answer);
-  check("composerClearsAfterSubmit", await browser.evaluate(`document.querySelector('input[aria-label="追加提问"]').value === ''`));
+  detail = await fold(browser, "详细讲解");
+  check("followUpKeepsDetailCollapsed", detail.expanded === "false" && !detail.panel && detail.composer, detail);
+  check("composerClearsAfterSubmit", await browser.evaluate(`document.querySelector('textarea[aria-label="追加提问"]').value === ''`));
   await shot("05-follow-up.png");
 
   await browser.click("导出 PNG", '[aria-label="动画控制区"] button', {exact:true});

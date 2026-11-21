@@ -125,7 +125,7 @@ export function PaneToggle({
   onToggle: () => void;
 }) {
   const Icon = side === "left" ? PanelLeft : PanelRight;
-  const label = side === "left" ? "题库与题目栏" : "动画参数栏";
+  const label = side === "left" ? "题库与题目栏" : "参数与对话栏";
   return (
     <Tooltip>
       <TooltipTrigger asChild>

@@ -1,4 +1,4 @@
-// Library regression probe: native editor fold, rename, delete/undo, sibling reorder, bulk/undo.
+// Library regression probe: read-only problem detail, rename, delete/undo, sibling reorder, bulk/undo.
 import { BASE, LEFT, ROW, runProbe, enterStudy, openExisting, waitFor } from "./cdp.mjs";
 
 await runProbe("v2-lib", {port:9345, width:1440, height:900}, async ({browser, check, expect, log, shot}) => {
@@ -15,20 +15,27 @@ await runProbe("v2-lib", {port:9345, width:1440, height:900}, async ({browser, c
   };
   await browser.goto(BASE);
   await enterStudy(browser);
-  await openExisting(browser);
+  const sessionTitle = await openExisting(browser);
 
-  const editorSelector = `${LEFT} details:has(> summary)`;
-  const editor = await browser.evaluate(`(() => {
-    const details = [...document.querySelectorAll(${JSON.stringify(editorSelector)})].find((el) => el.querySelector(':scope > summary')?.textContent.trim() === '编辑当前题目');
-    return {found:!!details, open:details?.open};
+  check("noObsoleteCurrentEditor", await browser.evaluate(`![...document.querySelectorAll(${JSON.stringify(`${LEFT} summary, ${LEFT} button`)})].some((el) => el.textContent.trim() === '编辑当前题目' || el.getAttribute('aria-label') === '编辑当前题目') && !document.querySelector(${JSON.stringify(`${LEFT} textarea[aria-label="题目内容"]`)})`));
+  const beforeDetail = await titles();
+  const target = await browser.box(`${LEFT} button[aria-label=${JSON.stringify(`查看题目 ${sessionTitle}`)}]`);
+  // CDP click counts generate a real double-click rather than dispatching a DOM event.
+  await browser.send("Input.dispatchMouseEvent", {type:"mouseMoved", x:target.x, y:target.y});
+  for (const clickCount of [1, 2]) {
+    await browser.send("Input.dispatchMouseEvent", {type:"mousePressed", x:target.x, y:target.y, button:"left", buttons:1, clickCount});
+    await browser.send("Input.dispatchMouseEvent", {type:"mouseReleased", x:target.x, y:target.y, button:"left", buttons:0, clickCount});
+  }
+  await browser.wait(`!!document.querySelector(${JSON.stringify(`${LEFT} button[aria-label="返回题库"]`)})?.getClientRects().length`, "double-click opens left problem detail");
+  const detail = await browser.evaluate(`(() => {
+    const section = document.querySelector(${JSON.stringify(`${LEFT} button[aria-label="返回题库"]`)})?.closest('section');
+    return {heading:section?.querySelector('h2')?.textContent, statement:section?.querySelector('p')?.textContent, editors:section?.querySelectorAll('input, textarea, [contenteditable="true"]').length};
   })()`);
-  check("currentEditorDefaultsClosed", editor.found && editor.open === false, editor);
-  await browser.click("编辑当前题目", `${LEFT} summary`, {exact:true});
-  check("currentEditorOpens", await browser.evaluate(`!!document.querySelector(${JSON.stringify(`${LEFT} details[open] textarea[aria-label="题目内容"]`)})?.getClientRects().length`));
-  const statement = await browser.evaluate(`document.querySelector(${JSON.stringify(`${LEFT} textarea[aria-label="题目内容"]`)})?.value`);
-  check("editorKeepsProblem", typeof statement === "string" && statement.length > 20, statement);
-  await browser.click("编辑当前题目", `${LEFT} summary`, {exact:true});
-  check("currentEditorCloses", !(await browser.evaluate(`!!document.querySelector(${JSON.stringify(`${LEFT} details[open] textarea[aria-label="题目内容"]`)})`)));
+  check("doubleClickOpensReadOnlyProblem", detail.heading === "题目" && detail.editors === 0, detail);
+  check("readOnlyDetailKeepsProblem", typeof detail.statement === "string" && detail.statement.length > 20, detail.statement);
+  await browser.clickSelector(`${LEFT} button[aria-label="返回题库"]`);
+  await browser.wait(`!!document.querySelector(${JSON.stringify(`${LEFT} ${ROW}`)})?.getClientRects().length`, "return restores library rows");
+  check("returnRestoresLibrary", !(await browser.exists(`${LEFT} button[aria-label="返回题库"]`)) && sameOrder(await titles(), beforeDetail));
 
   // Explicit manual sorting removes timestamp-driven reordering from rename/undo checks.
   await browser.clickSelector(`${LEFT} [aria-label="排序方式"]`);

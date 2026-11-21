@@ -325,6 +325,141 @@ export function buildExplanation(
   return { params: buildParamNotes(problem, result), phases: buildPhases(problem, result), qa };
 }
 
+function solutionNeeds(problem: Problem) {
+  const ask = new Set(problem.ask);
+  return {
+    range: ask.has("range"),
+    maxHeight: ask.has("maxHeight"),
+    flightTime: ask.has("flightTime") || ask.has("range"),
+    apexTime: ask.has("apexTime"),
+    landingSpeed: ask.has("landingSpeed"),
+  };
+}
+
+function solutionAnswer(c: Ctx): string {
+  const answers: Record<string, string> = {
+    range: `射程为 ${f(c.result.range)} m`,
+    maxHeight: `相对落地平面的最大高度为 ${f(c.result.maxHeight)} m`,
+    flightTime: `飞行时间为 ${f(c.result.flightTime)} s`,
+    apexTime: `到最高点的时间为 ${f(c.result.apexTime)} s`,
+    landingSpeed: `落地速度大小为 ${f(c.landingSpeed)} m/s`,
+  };
+  const requested = [...new Set(c.problem.ask)]
+    .filter((key) => Object.hasOwn(answers, key))
+    .map((key) => answers[key]);
+  return `答：${requested.length ? requested.join("；") : "题目未指定支持的所求量"}。`;
+}
+
+function velocityLines(c: Ctx, horizontal: boolean, vertical: boolean): string[] {
+  return [
+    ...(horizontal ? [`v₀ₓ = v₀ cosθ ≈ ${f(c.v0x)} m/s`] : []),
+    ...(vertical ? [`v₀ᵧ = v₀ sinθ ≈ ${f(c.v0y)} m/s`] : []),
+  ];
+}
+
+/** 标准答题文本；仅展示所求量及必要的中间量，数值始终取未舍入的解析解。 */
+export function buildExamSolution(problem: Problem, result: SolveResult): string {
+  const c = ctxOf(problem, result);
+  const need = solutionNeeds(problem);
+  const lines = [
+    "解",
+    "忽略空气阻力，取落地平面为 y = 0，竖直向上为正。",
+    ...velocityLines(c, need.range, need.flightTime || need.maxHeight || need.apexTime),
+  ];
+  if (need.apexTime) lines.push(`t₁ = v₀ᵧ/g ≈ ${f(result.apexTime)} s`);
+  if (need.maxHeight) lines.push(`H = h₀ + v₀ᵧ²/(2g) ≈ ${f(result.maxHeight)} m（相对落地平面）`);
+  if (need.flightTime) {
+    lines.push(
+      "落地时 h₀ + v₀ᵧT − ½gT² = 0，",
+      `T = (v₀ᵧ + √(v₀ᵧ² + 2gh₀))/g ≈ ${f(result.flightTime)} s`,
+    );
+  }
+  if (need.range) lines.push(`X = v₀ₓT ≈ ${f(result.range)} m`);
+  if (need.landingSpeed) {
+    lines.push("由 ½mv² = ½mv₀² + mgh₀，", `v = √(v₀² + 2gh₀) ≈ ${f(c.landingSpeed)} m/s`);
+  }
+  lines.push("", solutionAnswer(c));
+  return lines.join("\n");
+}
+
+/** 两种各自完整的解法，供详解展示、复制与 Markdown 导出共用。 */
+export function buildDetailedSolution(problem: Problem, result: SolveResult): string {
+  const c = ctxOf(problem, result);
+  const need = solutionNeeds(problem);
+  const motionTime = need.flightTime || need.landingSpeed;
+  const first = [
+    "① 分解运动法",
+    "解",
+    "忽略空气阻力，取落地平面为 y = 0，竖直向上为正；物体的加速度 aₓ = 0，aᵧ = −g。",
+    ...velocityLines(c, need.range || need.landingSpeed, motionTime || need.maxHeight || need.apexTime),
+  ];
+  if (need.range) first.push("水平方向做匀速运动：x = v₀ₓt。");
+  if (motionTime || need.maxHeight || need.apexTime) {
+    first.push("竖直方向：y = h₀ + v₀ᵧt − ½gt²，vᵧ = v₀ᵧ − gt。");
+  }
+  if (need.maxHeight || need.apexTime) {
+    first.push("最高点 vᵧ = 0，", `t₁ = v₀ᵧ/g ≈ ${f(result.apexTime)} s`);
+  }
+  if (need.maxHeight) {
+    first.push(`H = y(t₁) = h₀ + v₀ᵧ²/(2g) ≈ ${f(result.maxHeight)} m（相对落地平面）`);
+  }
+  if (motionTime) {
+    first.push(
+      "落地时 y(T) = 0，即 h₀ + v₀ᵧT − ½gT² = 0，",
+      `T = (v₀ᵧ + √(v₀ᵧ² + 2gh₀))/g ≈ ${f(result.flightTime)} s`,
+    );
+    if (result.flightTime === 0) first.push("本题物体初始已在落地平面且无向上的初速度，故 T = 0。");
+  }
+  if (need.range) first.push(`X = v₀ₓT ≈ ${f(result.range)} m`);
+  if (need.landingSpeed) {
+    first.push(
+      `vᵧ(T) = v₀ᵧ − gT = −√(v₀ᵧ² + 2gh₀) ≈ ${f(c.landingVy)} m/s`,
+      `v = √(v₀ₓ² + vᵧ(T)²) ≈ ${f(c.landingSpeed)} m/s`,
+    );
+  }
+  first.push("", solutionAnswer(c));
+
+  const second = [
+    "② 能量与分段运动法",
+    "解",
+    "忽略空气阻力，以落地平面为重力势能零点；H 表示物体相对该平面的最大高度。",
+    ...velocityLines(c, need.range, need.flightTime || need.maxHeight || need.apexTime),
+  ];
+  if (need.maxHeight || need.flightTime || need.apexTime) {
+    second.push(
+      "从抛出点至最高点，水平方向动能不变，竖直分运动满足：",
+      "½mv₀ᵧ² = mg(H − h₀)",
+      `H = h₀ + v₀ᵧ²/(2g) ≈ ${f(result.maxHeight)} m（相对落地平面）`,
+    );
+  }
+  if (need.apexTime || need.flightTime) {
+    second.push(
+      "上升段末竖直速度为 0，由匀减速运动关系 H − h₀ = ½gt₁² 得：",
+      `t₁ = √(2(H − h₀)/g) = v₀ᵧ/g ≈ ${f(result.apexTime)} s`,
+    );
+  }
+  if (need.flightTime) {
+    // Display rounding never feeds back into t₂, T or X.
+    const fallTime = Math.sqrt((2 * result.maxHeight) / problem.params.g);
+    second.push(
+      "从最高点下落，竖直初速度为 0，由 H = ½gt₂² 得：",
+      `t₂ = √(2H/g) ≈ ${f(fallTime)} s`,
+      `T = t₁ + t₂ ≈ ${f(result.flightTime)} s`,
+    );
+    if (result.flightTime === 0) second.push("本题 H = 0 且 v₀ᵧ = 0，故 t₁ = t₂ = T = 0。");
+  }
+  if (need.range) second.push(`水平方向匀速，X = v₀ₓT ≈ ${f(result.range)} m`);
+  if (need.landingSpeed) {
+    second.push(
+      "从抛出点到落地，机械能守恒：",
+      "½mv² = ½mv₀² + mgh₀",
+      `v = √(v₀² + 2gh₀) ≈ ${f(c.landingSpeed)} m/s`,
+    );
+  }
+  second.push("", solutionAnswer(c));
+  return [...first, "", ...second].join("\n");
+}
+
 export function solutionMarkdown(
   problem: Problem,
   result: SolveResult,
@@ -345,20 +480,18 @@ export function solutionMarkdown(
     `- 重力加速度 g = ${f(g)} m/s²`,
     `- 所求：${askLabels(problem.ask).join("、")}`,
     "",
-    "## 分步求解",
-  ];
-  result.steps.forEach((s) => {
-    lines.push(`### ${s.title}`, "```", s.formula, "```", s.explanation, "");
-  });
-  lines.push(
-    "## 结果",
-    `- 射程 X = ${f(result.range)} m`,
-    `- 最大高度 H = ${f(result.maxHeight)} m`,
-    `- 飞行时间 T = ${f(result.flightTime)} s`,
-    `- 到最高点时间 t₁ = ${f(result.apexTime)} s`,
+    "## 题解",
+    "```text",
+    buildExamSolution(problem, result),
+    "```",
+    "",
+    "## 详解",
+    "```text",
+    buildDetailedSolution(problem, result),
+    "```",
     "",
     "## 参数讲解",
-  );
+  ];
   explanation.params.forEach((p) => {
     lines.push(`- **${p.symbol} ${p.label}**：${p.meaning} 当前 ${p.current}。${p.effect}`);
   });

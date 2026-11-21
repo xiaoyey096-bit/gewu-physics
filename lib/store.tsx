@@ -115,6 +115,7 @@ function loadPrefs(): Prefs {
     return {
       ...DEFAULT_PREFS,
       ...parsed,
+      rightTab: parsed.rightTab === "chat" ? "chat" : "parameters",
       stage: { ...DEFAULT_PREFS.stage, ...(parsed.stage ?? {}) },
     };
   } catch {
@@ -420,6 +421,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         problem: input.problem,
         baseParams: input.problem.params,
         questions: input.questions,
+        questionTimes: Object.fromEntries(input.questions.map((question) => [question, now])),
       };
       commitSessions([record, ...list], [record]);
       setActiveId(record.id);

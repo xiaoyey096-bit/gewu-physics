@@ -28,6 +28,7 @@ function Shell() {
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [view, setView] = useState<"landing" | "intake" | "workspace">("landing");
   const [draftKey, setDraftKey] = useState(0);
+  const [showProblem, setShowProblem] = useState(false);
   const newProblem = () => {
     setDraftKey((key) => key + 1);
     setView("intake");
@@ -68,8 +69,9 @@ function Shell() {
     }
   }, [view, activeSession, sessions, setActive]);
 
-  const openSession = useCallback((id: string) => {
+  const openSession = useCallback((id: string, detail = false) => {
     setActive(id);
+    setShowProblem(detail);
     setView("workspace");
   }, [setActive]);
 
@@ -80,6 +82,7 @@ function Shell() {
       return;
     }
     setActive(target.id);
+    setShowProblem(false);
     setPrefs({ leftOpen: true });
     setView("workspace");
   }, [activeSession, sessions, setActive, setPrefs]);
@@ -102,7 +105,7 @@ function Shell() {
       ) : view === "landing" ? (
         <LandingScreen onEnter={() => setView("intake")} />
       ) : view === "workspace" && activeSession ? (
-        <Workspace key={activeSession.id} configured={configured} onNewProblem={newProblem} onHome={() => setView("landing")} />
+        <Workspace key={activeSession.id} configured={configured} onNewProblem={newProblem} onHome={() => setView("landing")} onOpenSession={openSession} showProblem={showProblem} onBackToLibrary={() => setShowProblem(false)} />
       ) : (
         <StudyLayout configured={configured} title="新建题目会话" composing onHome={() => setView("landing")} onNewProblem={newProblem} onOpenSession={openSession}>
           <IntakeScreen key={draftKey} configured={configured} onCreated={openSession} onOpenSession={openSession} onOpenLibrary={openLibrary} />

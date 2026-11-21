@@ -545,7 +545,7 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
                   onChange={(e) => setDraft({ ...draft, questions: e.target.value.split("\n") })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  生成动画后，展开会话中的「详解」查看逐条回答与数值依据。
+                  生成动画后，在右侧「对话」查看逐条回答与数值依据。
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {["为什么水平方向的速度一直不变？", "抛射角多大时射程最远？", "落地时的速度有多大？"].map((q) => (

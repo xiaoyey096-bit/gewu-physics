@@ -6,7 +6,7 @@ await runProbe("v2-responsive", {port:9346, width:1440, height:900}, async ({bro
   const isSheetOpen = () => browser.exists(dialog);
   const overflow = async (name, width) => {
     const state = await browser.evaluate(`(() => {
-      const selectors = 'html, body, main[aria-label="题目学习会话"], aside, [role="dialog"], section[aria-label="动画演示"], [aria-label="动画控制区"], section[aria-label="简要题解"], section[aria-label="详细讲解"], section[aria-label="参数讲解与调整"]';
+      const selectors = 'html, body, main[aria-label="题目学习会话"], aside, [role="dialog"], section[aria-label="动画演示"], [aria-label="动画控制区"], section[aria-label="简要题解"], section[aria-label="详细讲解"], section[aria-label="参数讲解与调整"], section[aria-label="题目对话"]';
       const containers = [...document.querySelectorAll(selectors)].filter((el) => el.clientWidth > 0).map((el) => ({
         tag:el.tagName, label:el.getAttribute('aria-label') || el.getAttribute('role'), width:el.clientWidth, scrollWidth:el.scrollWidth,
       }));
@@ -23,13 +23,17 @@ await runProbe("v2-responsive", {port:9346, width:1440, height:900}, async ({bro
     check(name, Math.abs(state.width - state.cssWidth) <= 2 && Math.abs(state.height - state.cssHeight) <= 2, state);
   };
   const openParameters = async (name) => {
-    await browser.clickSelector('button[aria-label="打开动画参数"]');
+    await browser.clickSelector('button[aria-label="打开参数与对话"]');
     await browser.wait(`!!document.querySelector(${JSON.stringify(dialog)})`, `${name} sheet opens`);
+    await browser.click('动画参数', '[role="tab"]', {exact:true});
     const state = await browser.evaluate(`(() => {
       const sheet = document.querySelector(${JSON.stringify(dialog)});
-      return {title:sheet?.querySelector('h2')?.textContent, sliders:sheet?.querySelectorAll('[role="slider"]').length, modal:sheet?.getAttribute('aria-modal')};
+      return {title:sheet?.querySelector('h2')?.textContent, sliders:sheet?.querySelectorAll('[role="slider"]').length, modal:sheet?.getAttribute('aria-modal'),
+        visibleSliders:[...sheet?.querySelectorAll('[role="slider"]') || []].filter((el) => el.getClientRects().length).length,
+        tabs:[...document.querySelectorAll('[role="tab"]')].map((el) => ({text:el.textContent.trim(), inSheet:sheet?.contains(el)}))};
     })()`);
-    check(`${name}ParameterSheet`, state.title === "动画参数与讲解" && state.sliders === 4 && state.modal === "true", state);
+    check(`${name}ParameterSheet`, state.title === "动画参数与对话" && state.sliders === 4 && state.visibleSliders === 4 && state.modal === "true", state);
+    check(`${name}OnlyRightSheetTabs`, state.tabs.length === 2 && state.tabs.every((tab) => tab.inSheet) && state.tabs[0].text === "动画参数" && state.tabs[1].text === "对话", state.tabs);
     await browser.wait(`!!document.activeElement?.closest(${JSON.stringify(dialog)})`, `${name} focus enters sheet`);
     const trapped = [];
     for (let i = 0; i < 20; i++) {
@@ -53,7 +57,7 @@ await runProbe("v2-responsive", {port:9346, width:1440, height:900}, async ({bro
   await browser.goto(BASE);
   await enterStudy(browser);
   const title = await openExisting(browser);
-  if (!(await browser.exists(RIGHT))) await browser.clickSelector('button[aria-label="展开动画参数栏"]');
+  if (!(await browser.exists(RIGHT))) await browser.clickSelector('button[aria-label="展开参数与对话栏"]');
   check("desktopHasThreeColumns", await browser.exists(LEFT) && await browser.exists(RIGHT) && await browser.exists('main[aria-label="题目学习会话"]'));
   check("desktopHasNoSheet", !(await isSheetOpen()));
   await painted("desktopCanvas");
@@ -73,13 +77,13 @@ await runProbe("v2-responsive", {port:9346, width:1440, height:900}, async ({bro
   await browser.clickSelector(`${dialog} button[aria-label="频闪"]`);
   check("tabletParameterToggleWorks", await browser.evaluate(`document.querySelector(${JSON.stringify(`${dialog} button[aria-label="频闪"]`)})?.getAttribute('aria-pressed')`) === String(strobeBefore !== "true"), {strobeBefore});
   await shot("21-tablet-parameters.png");
-  await closeSheet("tablet", "打开动画参数");
+  await closeSheet("tablet", "打开参数与对话");
   await reachable("tabletExportReachable", '[aria-label="动画控制区"] button', "导出 PNG");
   await shot("22-tablet-stage.png");
 
   await browser.metrics(390,844,true);
   check("mobileHasNeitherDesktopAside", !(await browser.exists(LEFT)) && !(await browser.exists(RIGHT)));
-  check("mobileNoObsoleteBottomTabs", !(await browser.exists('nav[aria-label="视图切换"]')) && !(await browser.exists('[role="tab"]')));
+  check("mobileNoObsoleteBottomTabs", !(await browser.exists('nav[aria-label="视图切换"], main[aria-label="题目学习会话"] [role="tab"]')) && !(await browser.exists('[role="tab"]')));
   await overflow("mobile390NoOverflow",390);
   await painted("mobileCanvas");
   await reachable("mobileCanvasReachable",CANVAS);
@@ -91,20 +95,37 @@ await runProbe("v2-responsive", {port:9346, width:1440, height:900}, async ({bro
   await reachable("mobileParameterBottomReachable",`${dialog} button`,"随机一题");
   await overflow("mobileParameterSheetNoOverflow",390);
   await shot("24-mobile-parameters.png");
-  await closeSheet("mobileParameters","打开动画参数");
+  await closeSheet("mobileParameters","打开参数与对话");
 
   const solution = await fold(browser,"简要题解"), detail = await fold(browser,"详细讲解");
-  check("mobileFoldDefaultsRetained",solution.expanded === "true" && detail.expanded === "false",{solution,detail});
+  check("mobileFoldDefaultsRetained",solution.expanded === "true" && solution.panel && detail.expanded === "false" && !detail.panel,{solution,detail});
   await browser.clickSelector('section[aria-label="简要题解"] > button[aria-expanded]');
   check("mobileSolutionCloses",!(await fold(browser,"简要题解")).panel);
-  await reachable("mobileComposerReachableWhileFolded",'input[aria-label="追加提问"]');
+  await browser.clickSelector('button[aria-label="打开参数与对话"]');
+  await browser.wait(`!!document.querySelector(${JSON.stringify(dialog)})`, "mobile chat sheet opens");
+  await browser.click('对话', '[role="tab"]', {exact:true});
+  await reachable("mobileComposerReachableWhileFolded",`${dialog} section[aria-label="题目对话"] textarea[aria-label="追加提问"]`);
+  check("mobileComposerVisibleWithBothFoldsClosed", (await fold(browser,"简要题解")).composer && (await fold(browser,"详细讲解")).composer);
   const question = "最高点时加速度为零吗？";
-  await browser.type('input[aria-label="追加提问"]',question);
+  await browser.type('textarea[aria-label="追加提问"]',question);
   await browser.clickSelector('button[aria-label="提交提问"]');
-  await browser.wait(`document.querySelector('section[aria-label="详细讲解"] > button')?.getAttribute('aria-expanded') === 'true'`, "mobile submit opens detail");
-  check("mobileQAPresent",await browser.evaluate(`[...document.querySelectorAll('[aria-label="答疑"] article h4')].some((el) => el.textContent === ${JSON.stringify(question)})`));
+  await browser.wait(`[...document.querySelectorAll('section[aria-label="题目对话"] [aria-label="问答记录"]')].some((record) => record.querySelector('article[aria-label="用户提问"] p')?.textContent === ${JSON.stringify(question)} && record.querySelectorAll('article[aria-label="问题回答"] p').length > 1)`, "mobile answer appears in chat");
+  check("mobileQAPresent",await browser.evaluate(`[...document.querySelectorAll(${JSON.stringify(`${dialog} section[aria-label="题目对话"] [aria-label="问答记录"]`)})].some((record) => record.querySelector('article[aria-label="用户提问"] p')?.textContent === ${JSON.stringify(question)} && record.querySelectorAll('article[aria-label="问题回答"] p').length > 1)`));
+  const afterAsk = await fold(browser,"详细讲解");
+  check("mobileFollowUpKeepsDetailCollapsed",afterAsk.expanded === "false" && !afterAsk.panel && afterAsk.composer,afterAsk);
+  check("mobileComposerClearsAfterSubmit",await browser.evaluate(`document.querySelector('textarea[aria-label="追加提问"]').value === ''`));
+  await overflow("mobileChatSheetNoOverflow",390);
+  await closeSheet("mobileChat","打开参数与对话");
   await browser.clickSelector('section[aria-label="简要题解"] > button[aria-expanded]');
   check("mobileSolutionReopens",(await fold(browser,"简要题解")).panel);
+  // Open details explicitly: asking in the right sheet must not expand them.
+  await browser.clickSelector('section[aria-label="详细讲解"] > button[aria-expanded]');
+  const openedDetail = await fold(browser,"详细讲解");
+  check("mobileDetailOpensWithTwoMethods",openedDetail.expanded === "true" && openedDetail.panel && ["① 分解运动法", "② 能量与分段运动法"].every((method) => openedDetail.text.includes(method)),openedDetail);
+  for (const label of ["简要题解", "详细讲解"]) check(`mobile${label}PlainBlock`,await browser.evaluate(`(() => {
+    const section = document.querySelector('section[aria-label=${JSON.stringify(label)}]');
+    return section?.querySelectorAll('pre').length === 1 && !section.querySelector('article, a, [aria-label="过程讲解"], [aria-label="答疑"], [aria-label="问答记录"], [aria-label="追加提问"]');
+  })()`));
   await overflow("mobileOpenFoldsNoOverflow",390);
   await shot("25-mobile-folds.png");
 
@@ -112,7 +133,7 @@ await runProbe("v2-responsive", {port:9346, width:1440, height:900}, async ({bro
   await browser.wait(`!!document.querySelector(${JSON.stringify(dialog)})`,"mobile library drawer opens");
   const rows = await browser.evaluate(`document.querySelectorAll(${JSON.stringify(`${dialog} ${ROW}`)}).length`);
   expect("mobileLibraryRowsAvailable",rows > 0,rows);
-  check("mobileLibraryDrawerTitle",await browser.evaluate(`document.querySelector(${JSON.stringify(dialog)})?.querySelector('h2')?.textContent === '题库'`));
+  check("mobileLibraryDrawerTitle",await browser.evaluate(`document.querySelector(${JSON.stringify(dialog)})?.querySelector('h2')?.textContent === '题库与题目'`));
   await overflow("mobileLibraryDrawerNoOverflow",390);
   await shot("26-mobile-library.png");
   await closeSheet("mobileLibrary","打开题库");
@@ -132,12 +153,12 @@ await runProbe("v2-responsive", {port:9346, width:1440, height:900}, async ({bro
   await painted("restoredDesktopCanvas");
   await overflow("restoredDesktopNoOverflow",1440);
   await browser.metrics(390,844,true);
-  await browser.clickSelector('button[aria-label="打开动画参数"]');
+  await browser.clickSelector('button[aria-label="打开参数与对话"]');
   await browser.wait(`!!document.querySelector(${JSON.stringify(dialog)})`, "parameter sheet reopens");
   await browser.key("Escape", "Escape", 27);
   await browser.wait(`!document.querySelector('[role="dialog"]')`, "Escape closes sheet");
-  check("escapeRestoresParameterTriggerFocus", await browser.evaluate(`document.activeElement?.getAttribute('aria-label') === '打开动画参数'`));
-  for (const opener of ["打开动画参数", "打开题库"]) {
+  check("escapeRestoresParameterTriggerFocus", await browser.evaluate(`document.activeElement?.getAttribute('aria-label') === '打开参数与对话'`));
+  for (const opener of ["打开参数与对话", "打开题库"]) {
     await browser.clickSelector(`button[aria-label=${JSON.stringify(opener)}]`);
     await browser.wait(`!!document.querySelector(${JSON.stringify(dialog)})`, `${opener} opens before resize`);
     await browser.metrics(1440,900);

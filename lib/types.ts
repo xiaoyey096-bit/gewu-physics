@@ -78,6 +78,7 @@ export interface SessionRecord {
   /** 识别/输入时的原始参数，供「重置参数」回到初始状态。 */
   baseParams: ProjectileParams;
   questions: string[];
+  questionTimes?: Record<string, number>;
   /** 云端 AI 深度讲解缓存（可选）。 */
   insight?: string;
   aiAnswers?: { question: string; answer: string }[];
@@ -94,7 +95,7 @@ export interface StageOptions {
 }
 
 export type ThemeMode = "system" | "light" | "dark";
-export type RightTab = "explain" | "solution" | "qa";
+export type RightTab = "parameters" | "chat";
 export type LibrarySort = "updated" | "created" | "title" | "manual";
 export type LibraryFilter = "all" | "photo" | "text" | "example";
 
@@ -169,7 +170,7 @@ export const DEFAULT_PREFS: Prefs = {
   rightWidth: 320,
   speed: 1,
   loop: false,
-  rightTab: "explain",
+  rightTab: "parameters",
   stage: DEFAULT_STAGE,
   librarySort: "updated",
   libraryFilter: "all",

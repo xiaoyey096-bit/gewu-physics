@@ -17,7 +17,7 @@ await runProbe("v2-interact", {port:9334, width:1440, height:900}, async ({brows
   const sessionTitle = await openExisting(browser);
   const rowCount = await browser.evaluate(`document.querySelectorAll(${JSON.stringify(`${LEFT} ${ROW}`)}).length`);
   log("selectedExistingSession", sessionTitle);
-  if (!(await browser.exists(RIGHT))) await browser.clickSelector('button[aria-label="展开动画参数栏"]');
+  if (!(await browser.exists(RIGHT))) await browser.clickSelector('button[aria-label="展开参数与对话栏"]');
   await shot("10-workspace.png");
 
   const originalAngle = await slider("抛射角");
@@ -31,7 +31,8 @@ await runProbe("v2-interact", {port:9334, width:1440, height:900}, async ({brows
   const duration = (vy + Math.sqrt(vy * vy + 2 * values.g * values.h0)) / values.g;
   const expected = {range:(vx * duration).toFixed(2), height:(values.h0 + vy * vy / (2 * values.g)).toFixed(2), duration:duration.toFixed(2)};
   const solution = await fold(browser, "简要题解");
-  check("parameterUpdatesSolution", Object.values(expected).every((value) => solution.text.includes(value)), {values, expected, text:solution.text});
+  const solutionNumbers = (solution.text.match(/-?\d+(?:\.\d+)?/g) || []).map((value) => Number(value).toString());
+  check("parameterUpdatesSolution", Object.values(expected).every((value) => solutionNumbers.includes(Number(value).toString())), {values, expected, text:solution.text});
   const axis = await timeState(browser);
   check("parameterUpdatesAnimationDuration", Math.abs(axis.duration - duration) < 0.02, {axis, duration});
   await shot("11-angle45.png");
@@ -73,18 +74,21 @@ await runProbe("v2-interact", {port:9334, width:1440, height:900}, async ({brows
   await browser.clickSelector('section[aria-label="详细讲解"] > button[aria-expanded]');
   const detail = await fold(browser, "详细讲解");
   check("detailFoldOpens", detail.expanded === "true" && detail.panel, detail);
-  const detailSeek = await browser.evaluate(`(() => {
-    const button = document.querySelector('[aria-label="过程讲解"] article button');
-    return button ? {text:button.textContent.trim(), seek:Number(button.textContent.match(/[0-9.]+/)?.[0])} : null;
+  const detailBlock = await browser.evaluate(`(() => {
+    const section = document.querySelector('section[aria-label="详细讲解"]');
+    const panel = document.getElementById(section?.querySelector('button[aria-expanded]')?.getAttribute('aria-controls'));
+    return {pre:panel?.querySelectorAll('pre').length, text:panel?.querySelector('pre')?.textContent || '',
+      obsolete:panel?.querySelectorAll('article, a, [role="link"], [aria-label="过程讲解"], [aria-label="动画过程阶段"], [aria-label="答疑"], [aria-label="问答记录"], [aria-label="追加提问"]').length,
+      buttons:[...panel?.querySelectorAll('button') || []].map((button) => button.textContent.trim())};
   })()`);
-  expect("detailPhaseLinkAvailable", detailSeek !== null && Number.isFinite(detailSeek.seek), detailSeek);
-  await browser.click(detailSeek.text, '[aria-label="过程讲解"] button', {exact:true});
-  check("detailPhaseSeeksCanvas", Math.abs((await timeState(browser)).time - detailSeek.seek) < 0.02);
+  check("detailHasTwoMethodsInOnePlainBlock", detailBlock.pre === 1 && ["① 分解运动法", "② 能量与分段运动法"].every((method) => detailBlock.text.includes(method)), detailBlock);
+  check("detailHasNoPhaseLinksOrQA", detailBlock.obsolete === 0 && detailBlock.buttons.every((text) => text === "复制详解"), detailBlock);
+  check("openingDetailDoesNotSeekCanvas", Math.abs((await timeState(browser)).time - atApex.time) < 0.02);
   await shot("12-phase-detail.png");
 
-  await browser.clickSelector('button[aria-label="收起动画参数栏"]');
+  await browser.clickSelector('button[aria-label="收起参数与对话栏"]');
   check("rightPaneCollapses", !(await browser.exists(RIGHT)) && await browser.exists(CANVAS));
-  await browser.clickSelector('button[aria-label="展开动画参数栏"]');
+  await browser.clickSelector('button[aria-label="展开参数与对话栏"]');
   check("rightPaneExpands", await browser.exists(RIGHT));
   for (const [side, panel, label] of [["right", RIGHT, "调整讲解栏宽度"], ["left", LEFT, "调整题库栏宽度"]]) {
     const before = {width:await panelWidth(panel), preference:(await prefs())[`${side}Width`]};

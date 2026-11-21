@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { BookOpen, ChevronRight, Plus, SlidersHorizontal } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { BookOpen, ChevronRight, MessageSquare, Plus, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError, requestJson } from "@/lib/api";
 import { buildExplanation, solutionMarkdown } from "@/lib/explain";
 import { downloadText } from "@/lib/image";
 import { solveProjectile } from "@/lib/physics";
 import { useStore } from "@/lib/store";
-import { kindLabel } from "@/lib/text";
+import { deriveTitle } from "@/lib/text";
 import type { Problem, ProjectileParams, StageApi, StageOptions } from "@/lib/types";
 import { useBreakpoint } from "@/lib/use-media";
 import { BrandMark, PaneToggle, ServiceBadge, StorageBadge, ThemeToggle } from "./Chrome";
@@ -18,23 +18,27 @@ import { LibraryPanel } from "@/src/features/library/LibraryPanel";
 import { StageView } from "@/src/features/stage/StageView";
 import { ParameterPanel } from "@/src/features/stage/ParameterPanel";
 import { InsightPanel } from "@/src/features/explain/InsightPanel";
+import { ConversationPanel } from "@/src/features/explain/ConversationPanel";
 
 interface LayoutProps {
   configured: boolean | null;
   onNewProblem: () => void;
   onHome: () => void;
-  onOpenSession: (id: string) => void;
+  onOpenSession: (id: string, showProblem?: boolean) => void;
   title: string;
   projectName?: string;
   composing?: boolean;
+  showProblem?: boolean;
+  onBackToLibrary?: () => void;
   children: ReactNode;
   parameters?: ReactNode;
+  conversation?: ReactNode;
 }
 
-export function StudyLayout({ configured, onNewProblem, onHome, onOpenSession, title, projectName, composing = false, children, parameters }: LayoutProps) {
+export function StudyLayout({ configured, onNewProblem, onHome, onOpenSession, title, projectName, composing = false, showProblem = false, onBackToLibrary = () => {}, children, parameters, conversation }: LayoutProps) {
   const { prefs, setPrefs, mode } = useStore();
   const bp = useBreakpoint();
-  const [leftDrawer, setLeftDrawer] = useState(false);
+  const [leftDrawer, setLeftDrawer] = useState(bp.mobile && showProblem);
   const [rightDrawer, setRightDrawer] = useState(false);
   useEffect(() => {
     if (!bp.mobile) setLeftDrawer(false);
@@ -43,8 +47,8 @@ export function StudyLayout({ configured, onNewProblem, onHome, onOpenSession, t
   const library = (
     <div className="flex h-full min-h-0 flex-col">
       <div className="p-4 pb-1"><Button variant="outline" className="w-full justify-start gap-2 rounded-xl" onClick={() => { setLeftDrawer(false); onNewProblem(); }}><Plus /> 新建题目会话</Button></div>
-      <div className="min-h-0 flex-1"><LibraryPanel showCurrent={!composing} onNewProblem={onNewProblem} onOpenSession={(id) => { setLeftDrawer(false); onOpenSession(id); }} /></div>
-      <p className="border-t border-border px-4 py-3 text-[10px] leading-5 text-muted-foreground">按章节建立项目，收藏每一次思考。<br />题库保存在当前浏览器。</p>
+      <div className="min-h-0 flex-1"><LibraryPanel showProblem={!composing && showProblem} onBackToLibrary={onBackToLibrary} onOpenSession={(id, detail) => { if (!detail) setLeftDrawer(false); onOpenSession(id, detail); }} /></div>
+      {!showProblem && <p className="border-t border-border px-4 py-3 text-[10px] leading-5 text-muted-foreground">按章节建立项目，收藏每一次思考。<br />题库保存在当前浏览器。</p>}
     </div>
   );
   const controls = parameters ?? (
@@ -56,34 +60,43 @@ export function StudyLayout({ configured, onNewProblem, onHome, onOpenSession, t
       <p className="text-[11px] leading-6 text-muted-foreground">当前支持理想抛体运动：斜抛、平抛与竖直上抛。其他章节模型尚未接入。</p>
     </div>
   );
+  const rightPanel = (
+    <Tabs value={prefs.rightTab} onValueChange={(value) => setPrefs({ rightTab: value === "chat" ? "chat" : "parameters" })} className="h-full min-h-0 gap-0">
+      <div className="shrink-0 border-b border-border p-3">
+        <TabsList className="w-full" aria-label="右侧面板"><TabsTrigger value="parameters"><SlidersHorizontal />动画参数</TabsTrigger><TabsTrigger value="chat"><MessageSquare />对话</TabsTrigger></TabsList>
+      </div>
+      <TabsContent value="parameters" forceMount className="min-h-0 overflow-y-auto data-[state=inactive]:hidden">{controls}</TabsContent>
+      <TabsContent value="chat" forceMount className="min-h-0 overflow-hidden data-[state=inactive]:hidden">{conversation ?? <p className="p-5 text-xs leading-7 text-muted-foreground">打开或新建一道题目后，可以在这里提问、复制内容和编辑题目。</p>}</TabsContent>
+    </Tabs>
+  );
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
-      <header className="z-20 flex h-16 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
-        <button type="button" onClick={onHome} aria-label="返回格物首页" className="shrink-0 rounded-lg text-left"><BrandMark compact /></button>
-        <ChevronRight className="hidden size-3.5 text-muted-foreground sm:block" />
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="hidden shrink-0 text-xs text-muted-foreground lg:inline">{projectName ?? "学习空间"}</span>
-          <span className="truncate text-xs font-medium" title={title}>{title}</span>
+      <header className="z-20 flex h-16 shrink-0 items-center gap-3 border-b border-border bg-card px-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)]">
+        <div className="flex min-w-0 shrink-0 items-center gap-3">
+          <button type="button" onClick={onHome} aria-label="返回格物首页" className="shrink-0 rounded-lg text-left"><BrandMark compact /></button>
+          <ChevronRight className="hidden size-3.5 shrink-0 text-muted-foreground lg:block" />
+          <span className="hidden truncate text-xs text-muted-foreground lg:block">{projectName ?? "学习空间"}</span>
         </div>
-        <div className="hidden 2xl:block"><ServiceBadge configured={configured} /></div>
-        <StorageBadge mode={mode} />
-        <div className="flex shrink-0 items-center gap-1">
+        <h1 className="min-w-0 flex-1 truncate text-center text-xs font-medium lg:text-sm" aria-label="当前会话名称" title={title}>{title}</h1>
+        <div className="flex shrink-0 items-center justify-end gap-1">
+          <div className="hidden 2xl:block"><ServiceBadge configured={configured} /></div>
+          <StorageBadge mode={mode} />
           {bp.mobile ? (
             <Sheet open={leftDrawer} onOpenChange={setLeftDrawer}>
               <SheetTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="打开题库"><BookOpen /></Button></SheetTrigger>
               <SheetContent side="left" aria-modal="true" className="w-[88vw] gap-0 p-0 sm:max-w-[360px]">
-                <SheetHeader className="border-b border-border"><SheetTitle>题库</SheetTitle><SheetDescription>按项目收藏和管理题目会话。</SheetDescription></SheetHeader>
+                <SheetHeader className="border-b border-border"><SheetTitle>题库与题目</SheetTitle><SheetDescription>选择题目，查看原文与图片。</SheetDescription></SheetHeader>
                 <div className="min-h-0 flex-1">{library}</div>
               </SheetContent>
             </Sheet>
           ) : <PaneToggle side="left" open={prefs.leftOpen} onToggle={() => setPrefs({ leftOpen: !prefs.leftOpen })} />}
           {bp.desktop ? <PaneToggle side="right" open={prefs.rightOpen} onToggle={() => setPrefs({ rightOpen: !prefs.rightOpen })} /> : (
             <Sheet open={rightDrawer} onOpenChange={setRightDrawer}>
-              <SheetTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="打开动画参数"><SlidersHorizontal /></Button></SheetTrigger>
+              <SheetTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="打开参数与对话"><SlidersHorizontal /></Button></SheetTrigger>
               <SheetContent side="right" aria-modal="true" className="w-[92vw] gap-0 p-0 sm:max-w-[400px]">
-                <SheetHeader className="border-b border-border"><SheetTitle>动画参数与讲解</SheetTitle><SheetDescription>调整参数后，动画与题解同步更新。</SheetDescription></SheetHeader>
-                <div className="min-h-0 flex-1 overflow-y-auto">{controls}</div>
+                <SheetHeader className="border-b border-border"><SheetTitle>动画参数与对话</SheetTitle><SheetDescription>调节动画参数，或切换到对话继续提问。</SheetDescription></SheetHeader>
+                <div className="min-h-0 flex-1">{rightPanel}</div>
               </SheetContent>
             </Sheet>
           )}
@@ -100,7 +113,7 @@ export function StudyLayout({ configured, onNewProblem, onHome, onOpenSession, t
         </main>
         {bp.desktop && prefs.rightOpen && <>
           <PaneResizer side="right" width={prefs.rightWidth} min={280} max={420} onWidth={(rightWidth) => setPrefs({ rightWidth })} />
-          <aside className="min-h-0 shrink-0 overflow-y-auto bg-card" style={{ width: `min(${prefs.rightWidth}px, 26vw)` }} aria-label="动画参数与讲解">{controls}</aside>
+          <aside className="min-h-0 shrink-0 overflow-hidden bg-card" style={{ width: `min(${prefs.rightWidth}px, 26vw)` }} aria-label="动画参数与对话">{rightPanel}</aside>
         </>}
       </div>
     </div>
@@ -111,10 +124,13 @@ interface Props {
   configured: boolean | null;
   onNewProblem: () => void;
   onHome: () => void;
+  onOpenSession: (id: string, showProblem?: boolean) => void;
+  showProblem: boolean;
+  onBackToLibrary: () => void;
 }
 
-export function Workspace({ configured, onNewProblem, onHome }: Props) {
-  const { activeSession, projects, prefs, setPrefs, setActive, updateSession } = useStore();
+export function Workspace({ configured, onNewProblem, onHome, onOpenSession, showProblem, onBackToLibrary }: Props) {
+  const { activeSession, projects, prefs, setPrefs, updateSession } = useStore();
   const bp = useBreakpoint();
   const session = activeSession!;
   const sessionRef = useRef(session);
@@ -122,6 +138,7 @@ export function Workspace({ configured, onNewProblem, onHome }: Props) {
   const [liveParams, setLiveParams] = useState<ProjectileParams>(session.problem.params);
   const [activePhase, setActivePhase] = useState(0);
   const [aiBusy, setAiBusy] = useState(false);
+  const aiVersion = useRef(0);
   const stageApi = useRef<StageApi | null>(null);
   const pendingRef = useRef<ProjectileParams | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -133,14 +150,15 @@ export function Workspace({ configured, onNewProblem, onHome }: Props) {
     if (!pending) return;
     pendingRef.current = null;
     const current = sessionRef.current;
-    updateSession(current.id, { problem: { ...current.problem, params: pending } });
+    updateSession(current.id, { problem: { ...current.problem, params: pending }, insight: undefined, aiAnswers: undefined });
   }, [updateSession]);
   useEffect(() => {
     window.addEventListener("pagehide", flush);
-    return () => { window.removeEventListener("pagehide", flush); flush(); };
+    return () => { window.removeEventListener("pagehide", flush); flush(); aiVersion.current++; };
   }, [flush]);
 
   const onParams = useCallback((params: ProjectileParams) => {
+    aiVersion.current++;
     setLiveParams(params);
     pendingRef.current = params;
     if (timerRef.current !== null) window.clearTimeout(timerRef.current);
@@ -148,14 +166,15 @@ export function Workspace({ configured, onNewProblem, onHome }: Props) {
   }, [flush]);
   const result = useMemo(() => solveProjectile(liveParams), [liveParams]);
   const problem = useMemo<Problem>(() => ({ ...session.problem, params: liveParams }), [session.problem, liveParams]);
-  const explanation = useMemo(() => buildExplanation(problem, result, session.questions, session.aiAnswers), [problem, result, session.questions, session.aiAnswers]);
+  const paramsSaved = JSON.stringify(liveParams) === JSON.stringify(session.problem.params);
+  const explanation = useMemo(() => buildExplanation(problem, result, session.questions, paramsSaved ? session.aiAnswers : undefined), [problem, result, session.questions, session.aiAnswers, paramsSaved]);
   const phases = explanation.phases;
+  const exploring = JSON.stringify(liveParams) !== JSON.stringify(session.baseParams);
   const onPhaseChange = useCallback((index: number) => setActivePhase(index), []);
   const onOptions = useCallback((patch: Partial<StageOptions>) => setPrefs({ stage: patch }), [setPrefs]);
   const onSpeed = useCallback((speed: number) => setPrefs({ speed }), [setPrefs]);
   const onLoop = useCallback((loop: boolean) => setPrefs({ loop }), [setPrefs]);
-  const seekPhase = useCallback((index: number) => { if (phases[index]) stageApi.current?.seek(phases[index].seek); }, [phases]);
-  const openSession = (id: string) => { flush(); setActive(id); };
+  const openSession = (id: string, detail?: boolean) => { flush(); onOpenSession(id, detail); };
   const leave = (action: () => void) => { flush(); action(); };
 
   const randomize = useCallback(() => {
@@ -170,35 +189,54 @@ export function Workspace({ configured, onNewProblem, onHome }: Props) {
   }, [problem, result, explanation]);
   const ask = useCallback((question: string) => {
     const current = sessionRef.current;
-    if (current.questions.some((q) => q.trim() === question.trim())) toast("这个问题已经在答疑列表里了");
-    else { updateSession(current.id, { questions: [...current.questions, question] }); toast.success("已加入答疑"); }
+    if (current.questions.some((q) => q.trim() === question.trim())) toast("这个问题已经在对话里了");
+    else {
+      aiVersion.current++;
+      updateSession(current.id, { questions: [...current.questions, question], questionTimes: { ...current.questionTimes, [question]: Date.now() } });
+    }
+  }, [updateSession]);
+  const editProblem = useCallback((next: Problem) => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+    pendingRef.current = null;
+    aiVersion.current++;
+    const current = sessionRef.current;
+    setLiveParams(next.params);
+    updateSession(current.id, {
+      problem: next,
+      baseParams: next.params,
+      title: current.title === deriveTitle(current.problem.statement, current.baseParams) ? deriveTitle(next.statement, next.params) : current.title,
+      insight: undefined,
+      aiAnswers: undefined,
+    });
+    toast.success("题目已保存，动画与题解已更新");
   }, [updateSession]);
   const aiExplain = useCallback(async () => {
     if (configured !== true || aiBusy) return;
+    flush();
     const current = sessionRef.current;
+    const version = ++aiVersion.current;
     setAiBusy(true);
     try {
       const data = await requestJson("/functions/v1/app/explain", { method: "POST", body: JSON.stringify({ problem, summary: { range: result.range, maxHeight: result.maxHeight, flightTime: result.flightTime, apexTime: result.apexTime }, questions: current.questions }) }) as { ok: true; insight?: string; answers?: { question: string; answer: string }[] };
+      if (version !== aiVersion.current) return;
       updateSession(current.id, { insight: data.insight?.trim() || current.insight, aiAnswers: data.answers?.length ? data.answers : current.aiAnswers });
       toast.success("AI 深度讲解已生成");
     } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "AI 讲解暂时不可用", { description: "本地物理推导不受影响。" });
+      if (version === aiVersion.current) toast.error(error instanceof ApiError ? error.message : "AI 讲解暂时不可用", { description: "本地物理推导不受影响。" });
     } finally { setAiBusy(false); }
-  }, [configured, aiBusy, problem, result, updateSession]);
+  }, [configured, aiBusy, problem, result, updateSession, flush]);
 
   return (
-    <StudyLayout configured={configured} onNewProblem={() => leave(onNewProblem)} onHome={() => leave(onHome)} onOpenSession={openSession} title={session.title} projectName={projects.find((p) => p.id === session.projectId)?.name}
-      parameters={<ParameterPanel params={liveParams} baseParams={session.baseParams} onParams={onParams} options={prefs.stage} onOptions={onOptions} notes={explanation.params} onRandom={randomize} />}>
-      <section className="flex flex-col gap-3" aria-label="当前题干">
-        <div className="flex items-center gap-2"><Badge variant="outline" className="bg-card text-[10px]">{kindLabel(liveParams)}</Badge><span className="text-[11px] text-muted-foreground">题目会话</span></div>
-        <h1 className="text-base font-medium leading-8 tracking-wide">{session.problem.statement}</h1>
-        {JSON.stringify(liveParams) !== JSON.stringify(session.baseParams) && <p className="text-xs text-vy">当前为参数探究：下方动画与题解使用右侧参数，原题干保持不变。</p>}
-      </section>
+    <StudyLayout configured={configured} onNewProblem={() => leave(onNewProblem)} onHome={() => leave(onHome)} onOpenSession={openSession} title={session.title} projectName={projects.find((p) => p.id === session.projectId)?.name} showProblem={showProblem} onBackToLibrary={onBackToLibrary}
+      parameters={<ParameterPanel params={liveParams} baseParams={session.baseParams} onParams={onParams} options={prefs.stage} onOptions={onOptions} notes={explanation.params} onRandom={randomize} />}
+      conversation={<ConversationPanel session={session} explanation={explanation} configured={configured} aiBusy={aiBusy} insight={paramsSaved ? session.insight : undefined} exploring={exploring} onAsk={ask} onAiExplain={aiExplain} onEditProblem={editProblem} />}>
+      {exploring && <p className="text-xs text-vy">当前为参数探究：动画与题解使用右侧参数，原题干保持不变。</p>}
       <section className="min-w-0 rounded-2xl border border-border bg-card p-3 sm:p-4" aria-label="动画演示">
         <div className="mb-3 flex items-center gap-3"><span className="font-mono text-xs text-muted-foreground">01</span><h2 className="text-sm font-semibold">动画演示</h2><span className="ml-auto text-[10px] text-muted-foreground">先观察，再推导</span></div>
         <StageView problem={problem} result={result} params={liveParams} options={prefs.stage} speed={prefs.speed} onSpeed={onSpeed} loop={prefs.loop} onLoop={onLoop} phases={phases} activePhase={activePhase} onPhaseChange={onPhaseChange} apiRef={stageApi} onExportSolution={exportSolution} compact={bp.mobile} />
       </section>
-      <InsightPanel problem={problem} result={result} explanation={explanation} activePhase={activePhase} onSeekPhase={seekPhase} configured={configured} insight={session.insight} aiBusy={aiBusy} onAsk={ask} onAiExplain={aiExplain} onExportSolution={exportSolution} />
+      <InsightPanel problem={problem} result={result} onExportSolution={exportSolution} />
       <p className="pb-3 text-center text-[10px] text-muted-foreground">理想模型 · 忽略空气阻力 · 动画与题解使用同一解析解</p>
     </StudyLayout>
   );
