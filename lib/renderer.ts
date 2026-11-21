@@ -4,6 +4,7 @@
 import type { Problem, SolveResult, StageOptions } from "./types";
 import { DEFAULT_STAGE } from "./types";
 import { sampleAt } from "./physics";
+import { motionObject, sceneTransform, stateAt } from "./motion";
 
 export interface Palette {
   bg: string;
@@ -85,21 +86,12 @@ export function drawScene(
 ): void {
   const { problem, result, time } = state;
   const { series } = result;
-  const cur = sampleAt(series, time);
+  const cur = { ...stateAt(problem.params, time), t: time };
   const T = series.duration || 1;
 
   ctx.clearRect(0, 0, width, height);
 
-  const worldW = Math.max(result.range, result.maxHeight * 0.6, 4);
-  const worldH = Math.max(result.maxHeight, 2.5);
-  const padBottom = width < 560 ? 76 : PAD.bottom;
-  const availW = width - PAD.left - PAD.right;
-  const availH = height - PAD.top - padBottom;
-  const scale = Math.min(availW / worldW, availH / worldH);
-  const ox = PAD.left + Math.max(0, (availW - worldW * scale) / 2);
-  const oy = height - padBottom;
-  const X = (x: number) => ox + x * scale;
-  const Y = (y: number) => oy - y * scale;
+  const { worldW, worldH, availW, availH, scale, ox, oy, X, Y } = sceneTransform(width, height, result);
   const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
   ctx.font = "11px system-ui, sans-serif";
@@ -352,21 +344,24 @@ export function drawScene(
     ctx.font = "11px system-ui, sans-serif";
   }
 
-  // 小球
+  const object = motionObject(problem);
+  const objectPath = () => {
+    ctx.beginPath();
+    if (object.shape === "box") ctx.rect(bx - 8, by - 7, 16, 14);
+    else ctx.arc(bx, by, 7, 0, Math.PI * 2);
+  };
   ctx.save();
   if (options.glow) {
     ctx.shadowColor = palette.resultant;
     ctx.shadowBlur = 16;
   }
   ctx.fillStyle = palette.resultant;
-  ctx.beginPath();
-  ctx.arc(bx, by, 7, 0, Math.PI * 2);
+  objectPath();
   ctx.fill();
   ctx.restore();
   ctx.strokeStyle = palette.surface;
   ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(bx, by, 7, 0, Math.PI * 2);
+  objectPath();
   ctx.stroke();
   ctx.save();
   ctx.globalAlpha = 0.55;
@@ -405,7 +400,7 @@ export function drawScene(
   if (!narrow) {
     ctx.font = "10px ui-monospace, monospace";
     ctx.fillStyle = palette.muted;
-    ctx.fillText("y = x·tanθ − g·x² / (2·v₀²·cos²θ)", PAD.left + 1, 6 + boxH + 14);
+    ctx.fillText("x = v₀·cosθ·t    y = h₀ + v₀·sinθ·t − g·t²/2", PAD.left + 1, 6 + boxH + 14);
     ctx.font = "11px system-ui, sans-serif";
   }
 

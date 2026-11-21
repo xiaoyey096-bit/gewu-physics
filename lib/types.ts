@@ -79,6 +79,7 @@ export interface SessionRecord {
   baseParams: ProjectileParams;
   questions: string[];
   questionTimes?: Record<string, number>;
+  solutionEdits?: Partial<Record<"exam" | "detail", { text: string; signature: string }>>;
   /** 云端 AI 深度讲解缓存（可选）。 */
   insight?: string;
   aiAnswers?: { question: string; answer: string }[];
@@ -149,7 +150,8 @@ export interface StageApi {
   play: () => void;
   pause: () => void;
   replay: () => void;
-  exportPng: () => void;
+  exportPng: (time?: number, label?: string) => void;
+  exportCritical: () => void;
 }
 
 export const DEFAULT_STAGE: StageOptions = {

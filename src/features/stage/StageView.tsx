@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
+import { criticalStates, motionObject, sceneTransform, stateAt, trajectoryTimeAt } from "@/lib/motion";
+import { Button } from "@/components/ui/button";
+import { VideoExport } from "./VideoExport";
 import { Badge } from "@/components/ui/badge";
 import { drawScene } from "@/lib/renderer";
 import { FALLBACK_PALETTE, readPalette } from "@/lib/palette";
@@ -45,6 +48,11 @@ export function StageView(props: Props) {
   const [palette, setPalette] = useState<Palette>(FALLBACK_PALETTE);
   const reducedMotion = useReducedMotion();
   const duration = result.series.duration;
+  const object = motionObject(problem);
+  const dragRef = useRef<number | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [dragBranch, setDragBranch] = useState<"rise" | "fall">("rise");
+  const vertical = Math.abs(Math.cos(params.angleDeg * Math.PI / 180)) < 1e-6;
 
   const paint = useCallback((t: number) => {
     const canvas = canvasRef.current;
@@ -171,26 +179,68 @@ export function StageView(props: Props) {
     if (duration > 0) setPlaying(true);
   }, [duration, reportPhase]);
 
-  const exportPng = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  const snapshot = useCallback((t: number, width: number, height: number, scale = 1) => {
     const out = document.createElement("canvas");
-    out.width = canvas.width;
-    out.height = canvas.height;
-    const ctx = out.getContext("2d");
-    if (!ctx) return;
+    out.width = width; out.height = height;
+    const ctx = out.getContext("2d")!;
+    ctx.scale(scale, scale);
+    drawScene(ctx, width / scale, height / scale, { problem, result, time: Math.max(0, Math.min(t, duration)) }, palette, options);
+    ctx.globalCompositeOperation = "destination-over";
     ctx.fillStyle = palette.bg;
-    ctx.fillRect(0, 0, out.width, out.height);
-    ctx.drawImage(canvas, 0, 0);
-    downloadDataUrl(out.toDataURL("image/png"), `格物-${kindLabel(params)}-${Date.now()}.png`);
-  }, [palette.bg, params]);
+    ctx.fillRect(0, 0, width / scale, height / scale);
+    return out;
+  }, [problem, result, duration, palette, options]);
+  const exportPng = useCallback((t = timeRef.current, label = "当前状态") => {
+    const canvas = canvasRef.current, wrap = wrapRef.current;
+    if (!canvas || !wrap || !wrap.clientWidth) return;
+    const out = snapshot(t, canvas.width, canvas.height, canvas.width / wrap.clientWidth);
+    downloadDataUrl(out.toDataURL("image/png"), `格物-${kindLabel(params)}-${label}-${t.toFixed(2)}s-${Date.now()}.png`);
+  }, [snapshot, params]);
+  const exportCritical = useCallback(() => {
+    const points = criticalStates(problem, result);
+    const out = document.createElement("canvas");
+    out.width = 1920; out.height = Math.ceil(points.length / 2) * 600;
+    const ctx = out.getContext("2d")!;
+    ctx.fillStyle = palette.bg; ctx.fillRect(0, 0, out.width, out.height);
+    points.forEach((point, i) => {
+      const x = (i % 2) * 960, y = Math.floor(i / 2) * 600;
+      ctx.fillStyle = palette.fg; ctx.font = "20px sans-serif";
+      ctx.fillText(`${object.label} · ${point.title} · t = ${point.time.toFixed(2)} s`, x + 24, y + 34);
+      ctx.drawImage(snapshot(point.time, 960, 540), x, y + 50);
+    });
+    downloadDataUrl(out.toDataURL("image/png"), `格物-全部临界状态-${Date.now()}.png`);
+  }, [problem, result, palette, object.label, snapshot]);
 
   useEffect(() => {
-    apiRef.current = { seek, play, pause, replay, exportPng };
-    return () => {
-      apiRef.current = null;
-    };
-  }, [apiRef, seek, play, pause, replay, exportPng]);
+    apiRef.current = { seek, play, pause, replay, exportPng, exportCritical };
+    return () => { apiRef.current = null; };
+  }, [apiRef, seek, play, pause, replay, exportPng, exportCritical]);
+
+  const pointerPosition = (event: PointerEvent<HTMLCanvasElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top, width: rect.width, height: rect.height };
+  };
+  const beginDrag = (event: PointerEvent<HTMLCanvasElement>) => {
+    if (event.button !== 0 || duration <= 0 || dragRef.current !== null) return;
+    const p = pointerPosition(event), view = sceneTransform(p.width, p.height, result), point = stateAt(params, timeRef.current);
+    if (Math.hypot(p.x - view.X(point.x), p.y - view.Y(point.y)) > 26) return;
+    event.preventDefault();
+    event.currentTarget.focus({ preventScroll: true });
+    pause(); cancelAnimationFrame(rafRef.current);
+    dragRef.current = event.pointerId; setDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const moveDrag = (event: PointerEvent<HTMLCanvasElement>) => {
+    if (dragRef.current !== event.pointerId) return;
+    event.preventDefault();
+    const p = pointerPosition(event);
+    seek(trajectoryTimeAt(problem, result, p.width, p.height, p.x, p.y, timeRef.current, vertical ? dragBranch : undefined));
+  };
+  const endDrag = (event: PointerEvent<HTMLCanvasElement>) => {
+    if (dragRef.current !== event.pointerId) return;
+    dragRef.current = null; setDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
 
   const playPause = () => {
     if (playing) pause();
@@ -209,9 +259,20 @@ export function StageView(props: Props) {
       >
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 h-full w-full"
+          className={cn("absolute inset-0 h-full w-full touch-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400", dragging ? "cursor-grabbing" : "cursor-grab")}
           role="img"
-          aria-label="抛体运动动画：小球沿解析解轨迹运动，显示速度矢量分解、频闪点与关键点标注"
+          tabIndex={0}
+          aria-label={`抛体运动动画：拖动${object.label}沿轨迹定位；方向键微调，Home 回起点，End 到落地`}
+          onPointerDown={beginDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onLostPointerCapture={endDrag}
+          onKeyDown={event => {
+            if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+            event.preventDefault(); pause();
+            seek(event.key === "Home" ? 0 : event.key === "End" ? duration : timeRef.current + (["ArrowRight", "ArrowUp"].includes(event.key) ? 1 : -1) * duration / 100);
+          }}
         />
         <div className="pointer-events-none absolute right-2 top-2 flex flex-col items-end gap-1">
           <Badge variant="secondary" className="px-2 text-[10px]">{kindLabel(params)} · 解析解</Badge>
@@ -226,22 +287,31 @@ export function StageView(props: Props) {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        <span>运动对象：{object.label} · 拖住对象沿轨迹定位，松手保持暂停。</span>
+        {vertical && <div className="flex gap-1" role="group" aria-label="竖直运动拖动分支">
+          <Button size="xs" variant={dragBranch === "rise" ? "secondary" : "outline"} aria-pressed={dragBranch === "rise"} onClick={() => setDragBranch("rise")}>上升段拖动</Button>
+          <Button size="xs" variant={dragBranch === "fall" ? "secondary" : "outline"} aria-pressed={dragBranch === "fall"} onClick={() => setDragBranch("fall")}>下落段拖动</Button>
+          <span>同一高度有两个时刻，请先选分支。</span>
+        </div>}
+      </div>
       <ControlDeck
         time={time}
         duration={duration}
         playing={playing}
         onPlayPause={playPause}
         onReplay={replay}
-        onScrub={seek}
+        onScrub={(t) => { pause(); seek(t); }}
         speed={speed}
         onSpeed={onSpeed}
         loop={loop}
         onLoop={onLoop}
         phases={phases}
         activePhase={activePhase}
-        onSeekPhase={(i) => { seek(phases[i].seek); }}
-        onExportPng={exportPng}
+        onSeekPhase={(i) => { pause(); seek(phases[i].seek); }}
+        onExportPng={() => exportPng()}
         onExportSolution={onExportSolution}
+        videoExport={<VideoExport problem={problem} result={result} palette={palette} options={options} speed={speed} />}
       />
     </div>
   );

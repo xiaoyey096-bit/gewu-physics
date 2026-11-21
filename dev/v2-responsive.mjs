@@ -122,10 +122,16 @@ await runProbe("v2-responsive", {port:9346, width:1440, height:900}, async ({bro
   await browser.clickSelector('section[aria-label="详细讲解"] > button[aria-expanded]');
   const openedDetail = await fold(browser,"详细讲解");
   check("mobileDetailOpensWithTwoMethods",openedDetail.expanded === "true" && openedDetail.panel && ["① 分解运动法", "② 能量与分段运动法"].every((method) => openedDetail.text.includes(method)),openedDetail);
-  for (const label of ["简要题解", "详细讲解"]) check(`mobile${label}PlainBlock`,await browser.evaluate(`(() => {
-    const section = document.querySelector('section[aria-label=${JSON.stringify(label)}]');
-    return section?.querySelectorAll('pre').length === 1 && !section.querySelector('article, a, [aria-label="过程讲解"], [aria-label="答疑"], [aria-label="问答记录"], [aria-label="追加提问"]');
-  })()`));
+  for (const label of ["简要题解", "详细讲解"]) {
+    const block = await browser.evaluate(`(() => {
+      const section = document.querySelector('section[aria-label=${JSON.stringify(label)}]');
+      const math = section?.querySelector('[data-solution-source]');
+      return {blocks:section?.querySelectorAll('[data-solution-source]').length, source:math?.getAttribute('data-solution-source') || '',
+        displays:math?.querySelectorAll('.katex-display').length, errors:math?.querySelectorAll('.katex-error').length,
+        obsolete:section?.querySelectorAll('pre, article, a, [aria-label="过程讲解"], [aria-label="答疑"], [aria-label="问答记录"], [aria-label="追加提问"]').length};
+    })()`);
+    check(`mobile${label}RenderedMathBlock`, block.blocks === 1 && block.source.includes('$$') && block.displays > 0 && block.errors === 0 && block.obsolete === 0, block);
+  }
   await overflow("mobileOpenFoldsNoOverflow",390);
   await shot("25-mobile-folds.png");
 

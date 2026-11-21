@@ -30,9 +30,14 @@ await runProbe("v2-interact", {port:9334, width:1440, height:900}, async ({brows
   const vy = values.v0 * Math.sin(Math.PI / 4), vx = values.v0 * Math.cos(Math.PI / 4);
   const duration = (vy + Math.sqrt(vy * vy + 2 * values.g * values.h0)) / values.g;
   const expected = {range:(vx * duration).toFixed(2), height:(values.h0 + vy * vy / (2 * values.g)).toFixed(2), duration:duration.toFixed(2)};
-  const solution = await fold(browser, "简要题解");
-  const solutionNumbers = (solution.text.match(/-?\d+(?:\.\d+)?/g) || []).map((value) => Number(value).toString());
-  check("parameterUpdatesSolution", Object.values(expected).every((value) => solutionNumbers.includes(Number(value).toString())), {values, expected, text:solution.text});
+  const solution = await browser.evaluate(`(() => {
+    const block = document.querySelector('section[aria-label="简要题解"] [data-solution-source]');
+    return {source:block?.getAttribute('data-solution-source') || '',
+      renderedNumbers:[...block?.querySelectorAll('.katex-mathml mn') || []].map((el) => Number(el.textContent).toString()),
+      errors:block?.querySelectorAll('.katex-error').length};
+  })()`);
+  const solutionNumbers = (solution.source.match(/-?\d+(?:\.\d+)?/g) || []).map((value) => Number(value).toString());
+  check("parameterUpdatesSolution", Object.values(expected).every((value) => solutionNumbers.includes(Number(value).toString()) && solution.renderedNumbers.includes(Number(value).toString())) && solution.errors === 0, {values, expected, solution});
   const axis = await timeState(browser);
   check("parameterUpdatesAnimationDuration", Math.abs(axis.duration - duration) < 0.02, {axis, duration});
   await shot("11-angle45.png");
@@ -77,12 +82,14 @@ await runProbe("v2-interact", {port:9334, width:1440, height:900}, async ({brows
   const detailBlock = await browser.evaluate(`(() => {
     const section = document.querySelector('section[aria-label="详细讲解"]');
     const panel = document.getElementById(section?.querySelector('button[aria-expanded]')?.getAttribute('aria-controls'));
-    return {pre:panel?.querySelectorAll('pre').length, text:panel?.querySelector('pre')?.textContent || '',
-      obsolete:panel?.querySelectorAll('article, a, [role="link"], [aria-label="过程讲解"], [aria-label="动画过程阶段"], [aria-label="答疑"], [aria-label="问答记录"], [aria-label="追加提问"]').length,
+    const block = panel?.querySelector('[data-solution-source]');
+    return {blocks:panel?.querySelectorAll('[data-solution-source]').length, source:block?.getAttribute('data-solution-source') || '', text:block?.textContent || '',
+      displays:block?.querySelectorAll('.katex-display').length, errors:block?.querySelectorAll('.katex-error').length,
+      obsolete:panel?.querySelectorAll('pre, article, a, [role="link"], [aria-label="过程讲解"], [aria-label="动画过程阶段"], [aria-label="答疑"], [aria-label="问答记录"], [aria-label="追加提问"]').length,
       buttons:[...panel?.querySelectorAll('button') || []].map((button) => button.textContent.trim())};
   })()`);
-  check("detailHasTwoMethodsInOnePlainBlock", detailBlock.pre === 1 && ["① 分解运动法", "② 能量与分段运动法"].every((method) => detailBlock.text.includes(method)), detailBlock);
-  check("detailHasNoPhaseLinksOrQA", detailBlock.obsolete === 0 && detailBlock.buttons.every((text) => text === "复制详解"), detailBlock);
+  check("detailHasTwoMethodsInOneMathBlock", detailBlock.blocks === 1 && detailBlock.source.includes('$$') && detailBlock.displays > 0 && detailBlock.errors === 0 && ["① 分解运动法", "② 能量与分段运动法"].every((method) => detailBlock.source.includes(method) && detailBlock.text.includes(method)), detailBlock);
+  check("detailHasNoPhaseLinksOrQA", detailBlock.obsolete === 0 && JSON.stringify(detailBlock.buttons) === JSON.stringify(["复制详解", "编辑详解"]), detailBlock);
   check("openingDetailDoesNotSeekCanvas", Math.abs((await timeState(browser)).time - atApex.time) < 0.02);
   await shot("12-phase-detail.png");
 

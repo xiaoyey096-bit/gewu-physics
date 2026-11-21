@@ -20,7 +20,15 @@ await runProbe("v3-workspace", { port: 9351, width: 1440, height: 900 }, async (
     req.onsuccess = () => { const db = req.result, tx = db.transaction('sessions'); const r = tx.objectStore('sessions').getAll(); r.onsuccess = () => { resolve(r.result.find(s => s.title === ${JSON.stringify(title)})); db.close(); }; };
   })`);
   const detail = `${LEFT} [aria-label="题目原文与图片"]`;
-  const pre = 'section[aria-label="简要题解"] pre';
+  const examBlock = 'section[aria-label="简要题解"] [data-solution-source]';
+  const detailBlock = 'section[aria-label="详细讲解"] [data-solution-source]';
+  const source = (selector) => browser.evaluate(`document.querySelector(${JSON.stringify(selector)})?.getAttribute('data-solution-source') || ''`);
+  const rendered = (selector) => browser.evaluate(`(() => {
+    const block = document.querySelector(${JSON.stringify(selector)});
+    return {blocks:document.querySelectorAll(${JSON.stringify(selector)}).length,
+      displays:block?.querySelectorAll('.katex-display').length, errors:block?.querySelectorAll('.katex-error').length,
+      numbers:[...block?.querySelectorAll('.katex-mathml mn') || []].map(el => Number(el.textContent).toString())};
+  })()`);
   await browser.send("Browser.grantPermissions", { origin: BASE, permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"] });
   await browser.goto(BASE);
   await enterStudy(browser);
@@ -35,17 +43,21 @@ await runProbe("v3-workspace", { port: 9351, width: 1440, height: 900 }, async (
   const heading = await browser.evaluate(`(() => { const h=document.querySelector('header h1'); const r=h.getBoundingClientRect(); return {text:h.textContent, center:r.x+r.width/2, width:innerWidth}; })()`);
   check("sessionNameCenteredInHeader", heading.text === title && Math.abs(heading.center - heading.width / 2) < 10, heading);
   check("noDuplicateCentralStatement", !(await browser.exists('main [aria-label="当前题干"]')));
-  const exam = await text(pre);
-  check("oneStandardAnswerBlock", await browser.evaluate(`document.querySelectorAll('section[aria-label="简要题解"] pre').length === 1`) && exam.startsWith("解") && exam.includes("答：") && exam.includes("35.35") && exam.includes("5.1") && exam.includes("2.04") && !exam.includes("第 1 步") && !exam.includes("抛体运动可分解"), exam);
+  const exam = await source(examBlock);
+  const examRender = await rendered(examBlock);
+  check("oneStandardAnswerBlock", examRender.blocks === 1 && exam.startsWith("解") && exam.includes("答：") && exam.includes("35.35") && exam.includes("5.1") && exam.includes("2.04") && !exam.includes("第 1 步") && !exam.includes("抛体运动可分解"), exam);
+  check("standardAnswerRendersLatex", exam.includes('$$') && exam.includes(String.raw`\frac`) && examRender.displays > 0 && examRender.errors === 0 && ["35.35", "5.1", "2.04"].every(n => examRender.numbers.includes(n)), examRender);
   check("detailDefaultClosed", !(await fold(browser, "详细讲解")).panel);
   await browser.clickSelector('section[aria-label="详细讲解"] > button');
-  const methods = await text('section[aria-label="详细讲解"] pre');
-  check("twoCompleteMethodsInSingleBlock", methods.includes("① 分解运动法") && methods.includes("② 能量与分段运动法") && methods.split("答：").length === 3 && await browser.evaluate(`document.querySelectorAll('section[aria-label="详细讲解"] pre').length === 1`), methods);
+  const methods = await source(detailBlock);
+  const methodsRender = await rendered(detailBlock);
+  check("twoCompleteMethodsInSingleBlock", methods.includes("① 分解运动法") && methods.includes("② 能量与分段运动法") && methods.split("答：").length === 3 && methodsRender.blocks === 1, methods);
+  check("bothMethodsRenderLatex", methods.includes('$$') && methodsRender.displays > examRender.displays && methodsRender.errors === 0 && ["35.35", "5.1", "2.04"].every(n => methodsRender.numbers.filter(value => value === n).length >= 2), methodsRender);
   await browser.click("复制详解", 'section[aria-label="详细讲解"] button', { exact: true });
-  check("copiesExactDetailText", (await browser.evaluate("navigator.clipboard.readText()")).replace(/\r\n/g, "\n") === methods);
+  check("copiesExactDetailLatexSource", (await browser.evaluate("navigator.clipboard.readText()")).replace(/\r\n/g, "\n") === methods);
   await browser.clickSelector('section[aria-label="详细讲解"] > button');
   await browser.click("复制题解", 'section[aria-label="简要题解"] button', { exact: true });
-  check("copiesExactExamText", (await browser.evaluate("navigator.clipboard.readText()")).replace(/\r\n/g, "\n") === exam);
+  check("copiesExactExamLatexSource", (await browser.evaluate("navigator.clipboard.readText()")).replace(/\r\n/g, "\n") === exam);
   await shot("01-standard-answer.png");
   await tab("对话");
   check("chatOnlyInRightPane", await visible(`${RIGHT} [aria-label="追加提问"]`) && !(await browser.exists('main [aria-label="追加提问"]')));
@@ -94,8 +106,9 @@ await runProbe("v3-workspace", { port: 9351, width: 1440, height: 900 }, async (
   const vx = 24 * Math.cos(37*Math.PI/180), vy = 24 * Math.sin(37*Math.PI/180);
   const duration = (vy + Math.sqrt(vy*vy+100))/10;
   const expected = [vx*duration, 5+vy*vy/20, duration].map(x=>Number(x.toFixed(2)).toString());
-  const updated = await text(pre);
-  check("editRecalculatesAllRequestedQuantities", expected.every(n=>updated.includes(n)), {expected,updated});
+  const updated = await source(examBlock);
+  const updatedRender = await rendered(examBlock);
+  check("editRecalculatesAllRequestedQuantities", expected.every(n=>updated.includes(n) && updatedRender.numbers.includes(n)) && updatedRender.errors === 0, {expected,updated,updatedRender});
   check("editRecalculatesAnimation", Math.abs((await timeState(browser)).duration-duration)<0.01);
   check("editUpdatesLeftAndChat", (await text(detail)).includes(newStatement) && (await text('[aria-label="对话题目"]')).includes(newStatement));
   const newTitle = await text('header h1');

@@ -1,3 +1,4 @@
+import { useId, useState } from "react";
 import { RotateCcw, Shuffle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -8,7 +9,7 @@ import { G_PRESETS, type ParamNote, type ProjectileParams, type StageOptions } f
 export interface ParameterPanelProps {
   params: ProjectileParams;
   baseParams: ProjectileParams;
-  onParams: (p: ProjectileParams) => void;
+  onParams: (p: ProjectileParams, immediate?: boolean) => void;
   options: StageOptions;
   onOptions: (patch: Partial<StageOptions>) => void;
   notes: ParamNote[];
@@ -30,6 +31,72 @@ const PARAM_SLIDERS: {
   { key: "g", symbol: "g", label: "重力加速度", unit: "m/s²", min: 1, max: 20, step: 0.1 },
 ];
 
+function ParameterValueInput({ config, params, onCommit }: {
+  config: (typeof PARAM_SLIDERS)[number];
+  params: ProjectileParams;
+  onCommit: (value: number) => void;
+}) {
+  const { key, label, symbol, unit, min, max } = config;
+  const value = params[key];
+  const errorId = useId();
+  const [draft, setDraft] = useState({ source: params, text: String(value) });
+
+  // External parameter changes win immediately, even before a blur can commit an old draft.
+  if (draft.source !== params) {
+    setDraft({ source: params, text: String(value) });
+  }
+  const text = draft.source === params ? draft.text : String(value);
+  const number = Number(text);
+  const invalid = text.trim() === "" || !Number.isFinite(number) || number < min || number > max;
+
+  const commit = () => {
+    if (draft.source !== params || invalid) return;
+    setDraft({ source: params, text: String(number) });
+    if (number !== value) onCommit(number);
+  };
+
+  return (
+    <>
+      <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2 text-xs">
+        <span>{label} <span className="font-mono">{symbol}</span></span>
+        <div className="flex min-w-0 max-w-full items-baseline gap-1 font-mono tabular-nums">
+          <input
+            type="number"
+            inputMode="decimal"
+            min={min}
+            max={max}
+            step="any"
+            value={text}
+            aria-label={`自定义${label} ${symbol}`}
+            aria-invalid={invalid || undefined}
+            aria-describedby={invalid ? errorId : undefined}
+            title={`输入 ${min}–${max} ${unit}，按 Enter 或离开输入框确认，按 Escape 撤销`}
+            onChange={(event) => setDraft({ source: params, text: event.currentTarget.value })}
+            onBlur={commit}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              if (event.key === "Enter") {
+                event.preventDefault();
+                commit();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                setDraft({ source: params, text: String(value) });
+              }
+            }}
+            className={`h-7 w-24 min-w-0 rounded-md border px-2 text-right text-xs text-slate-900 outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${invalid ? "border-red-400 bg-red-50 focus-visible:ring-red-400" : "border-sky-200 bg-sky-50 focus-visible:ring-sky-400"}`}
+          />
+          <span className="shrink-0 text-muted-foreground">{unit}</span>
+        </div>
+      </div>
+      {invalid && (
+        <p id={errorId} role="status" className="text-[11px] leading-relaxed text-red-600">
+          请输入 {min}–{max} {unit} 范围内的有效数字（可含小数）。当前输入未应用；按 Escape 恢复。
+        </p>
+      )}
+    </>
+  );
+}
+
 const DISPLAY_TOGGLES: { key: keyof StageOptions; label: string; hint: string }[] = [
   { key: "vectors", label: "速度矢量", hint: "显示水平/竖直/合速度三个箭头" },
   { key: "energy", label: "能量", hint: "动能与势能实时条，验证机械能守恒" },
@@ -41,23 +108,19 @@ const DISPLAY_TOGGLES: { key: keyof StageOptions; label: string; hint: string }[
 ];
 
 export function ParameterPanel({ params, baseParams, onParams, options, onOptions, notes, onRandom }: ParameterPanelProps) {
-  const set = (patch: Partial<ProjectileParams>) => onParams({ ...params, ...patch });
+  const set = (patch: Partial<ProjectileParams>, immediate = false) => onParams({ ...params, ...patch }, immediate);
 
   return (
     <section className="flex min-w-0 flex-col gap-4 p-5" aria-label="参数讲解与调整">
       <div className="space-y-2"><h2 className="text-sm font-semibold">动画参数</h2><p className="text-[11px] leading-5 text-muted-foreground">改变一个条件，看看运动会怎样。</p></div>
       <div className="flex flex-col divide-y divide-border">
-        {PARAM_SLIDERS.map(({ key, symbol, label, unit, min, max, step }) => {
+        {PARAM_SLIDERS.map((config) => {
+          const { key, symbol, label, min, max, step } = config;
           const note = notes.find((n) => n.key === key);
           const value = params[key];
           return (
             <section key={key} className="flex min-w-0 flex-col gap-2 py-3 first:pt-0 last:pb-0" aria-label={`${label} ${symbol}`}>
-              <div className="flex items-baseline justify-between gap-2 text-xs">
-                <span>{label} <span className="font-mono">{symbol}</span></span>
-                <span className="shrink-0 font-mono tabular-nums">
-                  {Number(value.toFixed(2))} <span className="text-muted-foreground">{unit}</span>
-                </span>
-              </div>
+              <ParameterValueInput config={config} params={params} onCommit={(v) => set({ [key]: v }, true)} />
               {note?.meaning && <p className="text-[11px] leading-relaxed text-muted-foreground">{note.meaning}</p>}
               <div className="flex min-w-0 items-center gap-2">
                 <Slider
@@ -70,7 +133,7 @@ export function ParameterPanel({ params, baseParams, onParams, options, onOption
                   className="min-w-0 flex-1 [&_[data-slot=slider-range]]:bg-foreground/70 [&_[data-slot=slider-thumb]]:border-muted-foreground"
                 />
                 {key === "g" && (
-                  <Select value={String(params.g)} onValueChange={(v) => set({ g: Number(v) })}>
+                  <Select value={String(params.g)} onValueChange={(v) => set({ g: Number(v) }, true)}>
                     <SelectTrigger size="sm" className="h-7 w-[104px] shrink-0 text-[11px]" aria-label="重力加速度预设">
                       <SelectValue />
                     </SelectTrigger>
@@ -78,8 +141,8 @@ export function ParameterPanel({ params, baseParams, onParams, options, onOption
                       {G_PRESETS.map((p) => (
                         <SelectItem key={p.value} value={String(p.value)}>{p.label}</SelectItem>
                       ))}
-                      {!G_PRESETS.some((p) => Math.abs(p.value - params.g) < 1e-6) && (
-                        <SelectItem value={String(params.g)}>自定义 {Number(params.g.toFixed(1))}</SelectItem>
+                      {!G_PRESETS.some((p) => p.value === params.g) && (
+                        <SelectItem value={String(params.g)}>自定义 {params.g}</SelectItem>
                       )}
                     </SelectContent>
                   </Select>
@@ -104,7 +167,7 @@ export function ParameterPanel({ params, baseParams, onParams, options, onOption
         <Button
           variant="outline"
           size="xs"
-          onClick={() => onParams(baseParams)}
+          onClick={() => onParams(baseParams, true)}
           disabled={JSON.stringify(params) === JSON.stringify(baseParams)}
           title="回到识别/输入时的参数"
         >

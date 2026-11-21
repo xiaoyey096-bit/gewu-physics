@@ -19,6 +19,7 @@ import { StageView } from "@/src/features/stage/StageView";
 import { ParameterPanel } from "@/src/features/stage/ParameterPanel";
 import { InsightPanel } from "@/src/features/explain/InsightPanel";
 import { ConversationPanel } from "@/src/features/explain/ConversationPanel";
+import { CriticalPoints } from "@/src/features/library/CriticalPoints";
 
 interface LayoutProps {
   configured: boolean | null;
@@ -33,9 +34,10 @@ interface LayoutProps {
   children: ReactNode;
   parameters?: ReactNode;
   conversation?: ReactNode;
+  criticalPoints?: ReactNode;
 }
 
-export function StudyLayout({ configured, onNewProblem, onHome, onOpenSession, title, projectName, composing = false, showProblem = false, onBackToLibrary = () => {}, children, parameters, conversation }: LayoutProps) {
+export function StudyLayout({ configured, onNewProblem, onHome, onOpenSession, title, projectName, composing = false, showProblem = false, onBackToLibrary = () => {}, children, parameters, conversation, criticalPoints }: LayoutProps) {
   const { prefs, setPrefs, mode } = useStore();
   const bp = useBreakpoint();
   const [leftDrawer, setLeftDrawer] = useState(bp.mobile && showProblem);
@@ -48,7 +50,8 @@ export function StudyLayout({ configured, onNewProblem, onHome, onOpenSession, t
     <div className="flex h-full min-h-0 flex-col">
       <div className="p-4 pb-1"><Button variant="outline" className="w-full justify-start gap-2 rounded-xl" onClick={() => { setLeftDrawer(false); onNewProblem(); }}><Plus /> 新建题目会话</Button></div>
       <div className="min-h-0 flex-1"><LibraryPanel showProblem={!composing && showProblem} onBackToLibrary={onBackToLibrary} onOpenSession={(id, detail) => { if (!detail) setLeftDrawer(false); onOpenSession(id, detail); }} /></div>
-      {!showProblem && <p className="border-t border-border px-4 py-3 text-[10px] leading-5 text-muted-foreground">按章节建立项目，收藏每一次思考。<br />题库保存在当前浏览器。</p>}
+      {criticalPoints}
+      {!showProblem && !criticalPoints && <p className="border-t border-border px-4 py-3 text-[10px] leading-5 text-muted-foreground">按章节建立项目，收藏每一次思考。<br />题库保存在当前浏览器。</p>}
     </div>
   );
   const controls = parameters ?? (
@@ -157,12 +160,13 @@ export function Workspace({ configured, onNewProblem, onHome, onOpenSession, sho
     return () => { window.removeEventListener("pagehide", flush); flush(); aiVersion.current++; };
   }, [flush]);
 
-  const onParams = useCallback((params: ProjectileParams) => {
+  const onParams = useCallback((params: ProjectileParams, immediate = false) => {
     aiVersion.current++;
     setLiveParams(params);
     pendingRef.current = params;
     if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(flush, 320);
+    if (immediate) flush();
+    else timerRef.current = window.setTimeout(flush, 320);
   }, [flush]);
   const result = useMemo(() => solveProjectile(liveParams), [liveParams]);
   const problem = useMemo<Problem>(() => ({ ...session.problem, params: liveParams }), [session.problem, liveParams]);
@@ -184,7 +188,7 @@ export function Workspace({ configured, onNewProblem, onHome, onOpenSession, sho
   }, [onParams]);
   const exportSolution = useCallback(() => {
     const current = sessionRef.current;
-    downloadText(solutionMarkdown(problem, result, explanation, current.questions), `格物题解-${current.title.slice(0, 20)}.md`);
+    downloadText(solutionMarkdown(problem, result, explanation, current.questions, { exam: current.solutionEdits?.exam?.text, detail: current.solutionEdits?.detail?.text }), `格物题解-${current.title.slice(0, 20)}.md`);
     toast.success("题解已导出为 Markdown", { duration: 2400 });
   }, [problem, result, explanation]);
   const ask = useCallback((question: string) => {
@@ -211,6 +215,12 @@ export function Workspace({ configured, onNewProblem, onHome, onOpenSession, sho
     });
     toast.success("题目已保存，动画与题解已更新");
   }, [updateSession]);
+  const saveSolution = useCallback((kind: "exam" | "detail", text: string | null) => {
+    const edits = { ...sessionRef.current.solutionEdits };
+    if (text === null) delete edits[kind];
+    else edits[kind] = { text, signature: JSON.stringify([problem.statement, problem.params, problem.ask]) };
+    updateSession(sessionRef.current.id, { solutionEdits: edits });
+  }, [problem, updateSession]);
   const aiExplain = useCallback(async () => {
     if (configured !== true || aiBusy) return;
     flush();
@@ -229,6 +239,7 @@ export function Workspace({ configured, onNewProblem, onHome, onOpenSession, sho
 
   return (
     <StudyLayout configured={configured} onNewProblem={() => leave(onNewProblem)} onHome={() => leave(onHome)} onOpenSession={openSession} title={session.title} projectName={projects.find((p) => p.id === session.projectId)?.name} showProblem={showProblem} onBackToLibrary={onBackToLibrary}
+      criticalPoints={<CriticalPoints problem={problem} result={result} onSeek={(time) => { stageApi.current?.pause(); stageApi.current?.seek(time); }} onExport={(time, label) => stageApi.current?.exportPng(time, label)} onExportAll={() => stageApi.current?.exportCritical()} />}
       parameters={<ParameterPanel params={liveParams} baseParams={session.baseParams} onParams={onParams} options={prefs.stage} onOptions={onOptions} notes={explanation.params} onRandom={randomize} />}
       conversation={<ConversationPanel session={session} explanation={explanation} configured={configured} aiBusy={aiBusy} insight={paramsSaved ? session.insight : undefined} exploring={exploring} onAsk={ask} onAiExplain={aiExplain} onEditProblem={editProblem} />}>
       {exploring && <p className="text-xs text-vy">当前为参数探究：动画与题解使用右侧参数，原题干保持不变。</p>}
@@ -236,7 +247,7 @@ export function Workspace({ configured, onNewProblem, onHome, onOpenSession, sho
         <div className="mb-3 flex items-center gap-3"><span className="font-mono text-xs text-muted-foreground">01</span><h2 className="text-sm font-semibold">动画演示</h2><span className="ml-auto text-[10px] text-muted-foreground">先观察，再推导</span></div>
         <StageView problem={problem} result={result} params={liveParams} options={prefs.stage} speed={prefs.speed} onSpeed={onSpeed} loop={prefs.loop} onLoop={onLoop} phases={phases} activePhase={activePhase} onPhaseChange={onPhaseChange} apiRef={stageApi} onExportSolution={exportSolution} compact={bp.mobile} />
       </section>
-      <InsightPanel problem={problem} result={result} onExportSolution={exportSolution} />
+      <InsightPanel problem={problem} result={result} onExportSolution={exportSolution} solutionEdits={session.solutionEdits} onSaveSolution={saveSolution} />
       <p className="pb-3 text-center text-[10px] text-muted-foreground">理想模型 · 忽略空气阻力 · 动画与题解使用同一解析解</p>
     </StudyLayout>
   );

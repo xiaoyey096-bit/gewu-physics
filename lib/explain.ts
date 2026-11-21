@@ -350,114 +350,123 @@ function solutionAnswer(c: Ctx): string {
   return `答：${requested.length ? requested.join("；") : "题目未指定支持的所求量"}。`;
 }
 
-function velocityLines(c: Ctx, horizontal: boolean, vertical: boolean): string[] {
-  return [
-    ...(horizontal ? [`v₀ₓ = v₀ cosθ ≈ ${f(c.v0x)} m/s`] : []),
-    ...(vertical ? [`v₀ᵧ = v₀ sinθ ≈ ${f(c.v0y)} m/s`] : []),
-  ];
-}
-
 /** 标准答题文本；仅展示所求量及必要的中间量，数值始终取未舍入的解析解。 */
 export function buildExamSolution(problem: Problem, result: SolveResult): string {
   const c = ctxOf(problem, result);
   const need = solutionNeeds(problem);
+  const math = (formula: string) => `$$\n${formula}\n$$`;
   const lines = [
     "解",
-    "忽略空气阻力，取落地平面为 y = 0，竖直向上为正。",
-    ...velocityLines(c, need.range, need.flightTime || need.maxHeight || need.apexTime),
+    "忽略空气阻力，取落地平面为 $y = 0$，竖直向上为正。",
+    ...(need.range ? [math(String.raw`v_{0x} = v_0 \cos\theta \approx ${f(c.v0x)}\,\mathrm{m/s}`)] : []),
+    ...(need.flightTime || need.maxHeight || need.apexTime ? [math(String.raw`v_{0y} = v_0 \sin\theta \approx ${f(c.v0y)}\,\mathrm{m/s}`)] : []),
   ];
-  if (need.apexTime) lines.push(`t₁ = v₀ᵧ/g ≈ ${f(result.apexTime)} s`);
-  if (need.maxHeight) lines.push(`H = h₀ + v₀ᵧ²/(2g) ≈ ${f(result.maxHeight)} m（相对落地平面）`);
+  if (need.apexTime) lines.push(math(String.raw`t_1 = \frac{v_{0y}}{g} \approx ${f(result.apexTime)}\,\mathrm{s}`));
+  if (need.maxHeight) {
+    lines.push("相对落地平面的最大高度：", math(String.raw`H = h_0 + \frac{v_{0y}^{2}}{2g} \approx ${f(result.maxHeight)}\,\mathrm{m}`));
+  }
   if (need.flightTime) {
     lines.push(
-      "落地时 h₀ + v₀ᵧT − ½gT² = 0，",
-      `T = (v₀ᵧ + √(v₀ᵧ² + 2gh₀))/g ≈ ${f(result.flightTime)} s`,
+      String.raw`落地时 $h_0 + v_{0y}T - \frac{1}{2}gT^2 = 0$，取非负的落地时刻：`,
+      math(String.raw`T = \frac{v_{0y} + \sqrt{v_{0y}^{2} + 2gh_0}}{g} \approx ${f(result.flightTime)}\,\mathrm{s}`),
+    );
+    if (result.flightTime === 0) lines.push("初始已在落地平面且无向上的初速度，故 $T = 0$。");
+  }
+  if (need.range) lines.push(math(String.raw`X = v_{0x}T \approx ${f(result.range)}\,\mathrm{m}`));
+  if (need.landingSpeed) {
+    lines.push(
+      String.raw`由机械能守恒 $\frac{1}{2}mv^2 = \frac{1}{2}mv_0^2 + mgh_0$，`,
+      math(String.raw`v = \sqrt{v_0^2 + 2gh_0} \approx ${f(c.landingSpeed)}\,\mathrm{m/s}`),
     );
   }
-  if (need.range) lines.push(`X = v₀ₓT ≈ ${f(result.range)} m`);
-  if (need.landingSpeed) {
-    lines.push("由 ½mv² = ½mv₀² + mgh₀，", `v = √(v₀² + 2gh₀) ≈ ${f(c.landingSpeed)} m/s`);
-  }
-  lines.push("", solutionAnswer(c));
-  return lines.join("\n");
+  lines.push(solutionAnswer(c));
+  return lines.join("\n\n");
 }
 
 /** 两种各自完整的解法，供详解展示、复制与 Markdown 导出共用。 */
 export function buildDetailedSolution(problem: Problem, result: SolveResult): string {
   const c = ctxOf(problem, result);
   const need = solutionNeeds(problem);
+  const math = (formula: string) => `$$\n${formula}\n$$`;
   const motionTime = need.flightTime || need.landingSpeed;
   const first = [
     "① 分解运动法",
     "解",
-    "忽略空气阻力，取落地平面为 y = 0，竖直向上为正；物体的加速度 aₓ = 0，aᵧ = −g。",
-    ...velocityLines(c, need.range || need.landingSpeed, motionTime || need.maxHeight || need.apexTime),
+    "忽略空气阻力，取落地平面为 $y = 0$，竖直向上为正；物体的加速度 $a_x = 0$，$a_y = -g$。",
+    ...(need.range || need.landingSpeed ? [math(String.raw`v_{0x} = v_0 \cos\theta \approx ${f(c.v0x)}\,\mathrm{m/s}`)] : []),
+    ...(motionTime || need.maxHeight || need.apexTime ? [math(String.raw`v_{0y} = v_0 \sin\theta \approx ${f(c.v0y)}\,\mathrm{m/s}`)] : []),
   ];
-  if (need.range) first.push("水平方向做匀速运动：x = v₀ₓt。");
+  if (need.range) first.push("水平方向做匀速运动：$x = v_{0x}t$。");
   if (motionTime || need.maxHeight || need.apexTime) {
-    first.push("竖直方向：y = h₀ + v₀ᵧt − ½gt²，vᵧ = v₀ᵧ − gt。");
+    first.push(
+      "竖直方向做匀变速运动：",
+      math(String.raw`y = h_0 + v_{0y}t - \frac{1}{2}gt^2,\qquad v_y = v_{0y} - gt`),
+    );
   }
   if (need.maxHeight || need.apexTime) {
-    first.push("最高点 vᵧ = 0，", `t₁ = v₀ᵧ/g ≈ ${f(result.apexTime)} s`);
+    first.push("最高点 $v_y = 0$，", math(String.raw`t_1 = \frac{v_{0y}}{g} \approx ${f(result.apexTime)}\,\mathrm{s}`));
   }
   if (need.maxHeight) {
-    first.push(`H = y(t₁) = h₀ + v₀ᵧ²/(2g) ≈ ${f(result.maxHeight)} m（相对落地平面）`);
+    first.push("代入位置方程，得到相对落地平面的最大高度：", math(String.raw`H = y(t_1) = h_0 + \frac{v_{0y}^{2}}{2g} \approx ${f(result.maxHeight)}\,\mathrm{m}`));
   }
   if (motionTime) {
     first.push(
-      "落地时 y(T) = 0，即 h₀ + v₀ᵧT − ½gT² = 0，",
-      `T = (v₀ᵧ + √(v₀ᵧ² + 2gh₀))/g ≈ ${f(result.flightTime)} s`,
+      String.raw`落地时 $y(T) = 0$，即 $h_0 + v_{0y}T - \frac{1}{2}gT^2 = 0$，取非负的落地时刻：`,
+      math(String.raw`T = \frac{v_{0y} + \sqrt{v_{0y}^{2} + 2gh_0}}{g} \approx ${f(result.flightTime)}\,\mathrm{s}`),
     );
-    if (result.flightTime === 0) first.push("本题物体初始已在落地平面且无向上的初速度，故 T = 0。");
+    if (result.flightTime === 0) first.push("本题物体初始已在落地平面且无向上的初速度，故 $T = 0$。");
   }
-  if (need.range) first.push(`X = v₀ₓT ≈ ${f(result.range)} m`);
+  if (need.range) first.push(math(String.raw`X = v_{0x}T \approx ${f(result.range)}\,\mathrm{m}`));
   if (need.landingSpeed) {
     first.push(
-      `vᵧ(T) = v₀ᵧ − gT = −√(v₀ᵧ² + 2gh₀) ≈ ${f(c.landingVy)} m/s`,
-      `v = √(v₀ₓ² + vᵧ(T)²) ≈ ${f(c.landingSpeed)} m/s`,
+      "落地速度由水平、竖直分量合成：",
+      math(String.raw`v_y(T) = v_{0y} - gT = -\sqrt{v_{0y}^{2} + 2gh_0} \approx ${f(c.landingVy)}\,\mathrm{m/s}`),
+      math(String.raw`v = \sqrt{v_{0x}^{2} + v_y(T)^2} \approx ${f(c.landingSpeed)}\,\mathrm{m/s}`),
     );
   }
-  first.push("", solutionAnswer(c));
+  first.push(solutionAnswer(c));
 
   const second = [
     "② 能量与分段运动法",
     "解",
-    "忽略空气阻力，以落地平面为重力势能零点；H 表示物体相对该平面的最大高度。",
-    ...velocityLines(c, need.range, need.flightTime || need.maxHeight || need.apexTime),
+    "忽略空气阻力，以落地平面为重力势能零点。",
+    ...(need.range ? [math(String.raw`v_{0x} = v_0 \cos\theta \approx ${f(c.v0x)}\,\mathrm{m/s}`)] : []),
+    ...(need.flightTime || need.maxHeight || need.apexTime ? [math(String.raw`v_{0y} = v_0 \sin\theta \approx ${f(c.v0y)}\,\mathrm{m/s}`)] : []),
   ];
   if (need.maxHeight || need.flightTime || need.apexTime) {
     second.push(
-      "从抛出点至最高点，水平方向动能不变，竖直分运动满足：",
-      "½mv₀ᵧ² = mg(H − h₀)",
-      `H = h₀ + v₀ᵧ²/(2g) ≈ ${f(result.maxHeight)} m（相对落地平面）`,
+      "$H$ 表示相对落地平面的最大高度。从抛出点至最高点，水平方向动能不变，竖直分运动满足：",
+      math(String.raw`\frac{1}{2}mv_{0y}^{2} = mg(H - h_0)`),
+      math(String.raw`H = h_0 + \frac{v_{0y}^{2}}{2g} \approx ${f(result.maxHeight)}\,\mathrm{m}`),
     );
   }
   if (need.apexTime || need.flightTime) {
     second.push(
-      "上升段末竖直速度为 0，由匀减速运动关系 H − h₀ = ½gt₁² 得：",
-      `t₁ = √(2(H − h₀)/g) = v₀ᵧ/g ≈ ${f(result.apexTime)} s`,
+      String.raw`上升段末竖直速度为 $0$，由匀减速运动关系 $H - h_0 = \frac{1}{2}gt_1^2$ 得：`,
+      math(String.raw`t_1 = \sqrt{\frac{2(H - h_0)}{g}} = \frac{v_{0y}}{g} \approx ${f(result.apexTime)}\,\mathrm{s}`),
     );
   }
   if (need.flightTime) {
-    // Display rounding never feeds back into t₂, T or X.
     const fallTime = Math.sqrt((2 * result.maxHeight) / problem.params.g);
     second.push(
-      "从最高点下落，竖直初速度为 0，由 H = ½gt₂² 得：",
-      `t₂ = √(2H/g) ≈ ${f(fallTime)} s`,
-      `T = t₁ + t₂ ≈ ${f(result.flightTime)} s`,
+      String.raw`从最高点下落，竖直初速度为 $0$，由 $H = \frac{1}{2}gt_2^2$ 得：`,
+      math(String.raw`t_2 = \sqrt{\frac{2H}{g}} \approx ${f(fallTime)}\,\mathrm{s}`),
+      math(String.raw`T = t_1 + t_2 \approx ${f(result.flightTime)}\,\mathrm{s}`),
     );
-    if (result.flightTime === 0) second.push("本题 H = 0 且 v₀ᵧ = 0，故 t₁ = t₂ = T = 0。");
+    if (result.flightTime === 0) second.push("本题 $H = 0$ 且 $v_{0y} = 0$，故 $t_1 = t_2 = T = 0$。");
   }
-  if (need.range) second.push(`水平方向匀速，X = v₀ₓT ≈ ${f(result.range)} m`);
+  if (need.range) {
+    second.push("水平方向匀速，故射程为：", math(String.raw`X = v_{0x}T \approx ${f(result.range)}\,\mathrm{m}`));
+  }
   if (need.landingSpeed) {
     second.push(
       "从抛出点到落地，机械能守恒：",
-      "½mv² = ½mv₀² + mgh₀",
-      `v = √(v₀² + 2gh₀) ≈ ${f(c.landingSpeed)} m/s`,
+      math(String.raw`\frac{1}{2}mv^2 = \frac{1}{2}mv_0^2 + mgh_0`),
+      math(String.raw`v = \sqrt{v_0^2 + 2gh_0} \approx ${f(c.landingSpeed)}\,\mathrm{m/s}`),
     );
   }
-  second.push("", solutionAnswer(c));
-  return [...first, "", ...second].join("\n");
+  second.push(solutionAnswer(c));
+  return [...first, ...second].join("\n\n");
 }
 
 export function solutionMarkdown(
@@ -465,6 +474,7 @@ export function solutionMarkdown(
   result: SolveResult,
   explanation: Explanation,
   questions: string[],
+  edits?: { exam?: string; detail?: string },
 ): string {
   const { v0, angleDeg, h0, g } = problem.params;
   const lines: string[] = [
@@ -474,21 +484,17 @@ export function solutionMarkdown(
     problem.statement,
     "",
     "## 已知量",
-    `- 初速度 v₀ = ${f(v0)} m/s`,
-    `- 抛射角 θ = ${f(angleDeg)}°`,
-    `- 初始高度 h₀ = ${f(h0)} m`,
-    `- 重力加速度 g = ${f(g)} m/s²`,
+    String.raw`- 初速度 $v_0 = ${f(v0)}\,\mathrm{m/s}$`,
+    String.raw`- 抛射角 $\theta = ${f(angleDeg)}^{\circ}$`,
+    String.raw`- 初始高度 $h_0 = ${f(h0)}\,\mathrm{m}$`,
+    String.raw`- 重力加速度 $g = ${f(g)}\,\mathrm{m/s^2}$`,
     `- 所求：${askLabels(problem.ask).join("、")}`,
     "",
     "## 题解",
-    "```text",
-    buildExamSolution(problem, result),
-    "```",
+    edits?.exam ?? buildExamSolution(problem, result),
     "",
     "## 详解",
-    "```text",
-    buildDetailedSolution(problem, result),
-    "```",
+    edits?.detail ?? buildDetailedSolution(problem, result),
     "",
     "## 参数讲解",
   ];

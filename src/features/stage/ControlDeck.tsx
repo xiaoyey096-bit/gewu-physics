@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Camera, FileText, Pause, Play, Repeat, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -22,6 +23,7 @@ interface Props {
   onSeekPhase: (index: number) => void;
   onExportPng: () => void;
   onExportSolution: () => void;
+  videoExport: ReactNode;
 }
 
 export function ControlDeck(props: Props) {
@@ -89,7 +91,7 @@ export function ControlDeck(props: Props) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex flex-1 flex-wrap gap-1" role="group" aria-label="动画过程阶段">
+        <div className="flex basis-full flex-wrap gap-1 sm:basis-auto sm:flex-1" role="group" aria-label="动画过程阶段">
           {phases.map((p, i) => (
             <button
               key={p.id}
@@ -115,6 +117,7 @@ export function ControlDeck(props: Props) {
           <Button variant="outline" size="xs" onClick={onExportSolution}>
             <FileText /> 导出题解
           </Button>
+          {props.videoExport}
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-// Intake -> confirmation -> workspace, physics/canvas, plain solution folds/right chat and real exports.
+// Intake -> confirmation -> workspace, physics/canvas, rendered solution folds/right chat and real exports.
 import { mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { BASE, LEFT, RIGHT, CANVAS, runProbe, enterStudy, fold, canvasState, timeState, waitFor, sleep } from "./cdp.mjs";
@@ -50,17 +50,25 @@ await runProbe("v2-smoke", { port:9333, width:1440, height:900 }, async ({ brows
   let detail = await fold(browser, "详细讲解");
   check("solutionDefaultExpanded", solution.expanded === "true" && solution.panel && solution.heading === "题解", solution);
   check("detailDefaultCollapsed", detail.expanded === "false" && !detail.panel && detail.heading === "详解", detail);
-  const solutionNumbers = (solution.text.match(/-?\d+(?:\.\d+)?/g) || []).map((value) => Number(value).toString());
-  check("localPhysicsResults", ["35.35", "5.10", "2.04"].every((value) => solutionNumbers.includes(Number(value).toString())), solution.text);
+  const exam = await browser.evaluate(`(() => {
+    const block = document.querySelector('section[aria-label="简要题解"] [data-solution-source]');
+    return {source:block?.getAttribute('data-solution-source') || '',
+      renderedNumbers:[...block?.querySelectorAll('.katex-mathml mn') || []].map((el) => Number(el.textContent).toString())};
+  })()`);
+  const solutionNumbers = (exam.source.match(/-?\d+(?:\.\d+)?/g) || []).map((value) => Number(value).toString());
+  check("localPhysicsResults", ["35.35", "5.10", "2.04"].every((value) => solutionNumbers.includes(Number(value).toString()) && exam.renderedNumbers.includes(Number(value).toString())), exam);
   const tabs = await browser.evaluate(`[...document.querySelectorAll('[role="tab"]')].map((el) => ({text:el.textContent.trim(), right:!!el.closest(${JSON.stringify(RIGHT)})}))`);
   check("onlyRightParameterAndChatTabs", tabs.length === 2 && tabs.every((tab) => tab.right) && tabs[0].text === "动画参数" && tabs[1].text === "对话", tabs);
   check("noObsoleteTabs", !(await browser.exists('main[aria-label="题目学习会话"] [role="tab"], nav[aria-label="视图切换"]')));
   for (const label of ["简要题解", "详细讲解"]) {
     const block = await browser.evaluate(`(() => {
       const section = document.querySelector('section[aria-label=${JSON.stringify(label)}]');
-      return {pre:section?.querySelectorAll('pre').length, obsolete:section?.querySelectorAll('article, a, [aria-label="过程讲解"], [aria-label="答疑"], [aria-label="问答记录"], [aria-label="追加提问"]').length};
+      const math = section?.querySelector('[data-solution-source]');
+      return {blocks:section?.querySelectorAll('[data-solution-source]').length, source:math?.getAttribute('data-solution-source') || '',
+        displays:math?.querySelectorAll('.katex-display').length, errors:math?.querySelectorAll('.katex-error').length,
+        obsolete:section?.querySelectorAll('pre, article, a, [aria-label="过程讲解"], [aria-label="答疑"], [aria-label="问答记录"], [aria-label="追加提问"]').length};
     })()`);
-    check(`${label}HasOnePlainBlock`, block.pre === 1 && block.obsolete === 0, block);
+    check(`${label}HasOneRenderedMathBlock`, block.blocks === 1 && block.source.includes('$$') && block.displays > 0 && block.errors === 0 && block.obsolete === 0, block);
   }
   await browser.click('对话', '[role="tab"]', {exact:true});
   check("rightChatComposerVisible", await browser.evaluate(`!!document.querySelector(${JSON.stringify(`${RIGHT} section[aria-label="题目对话"] textarea[aria-label="追加提问"]`)})?.getClientRects().length`));
@@ -106,5 +114,7 @@ await runProbe("v2-smoke", { port:9333, width:1440, height:900 }, async ({ brows
   check("pngMatchesCanvasDimensions", png.readUInt32BE(16) === exportedCanvas.width && png.readUInt32BE(20) === exportedCanvas.height, {width:png.readUInt32BE(16), height:png.readUInt32BE(20)});
   const markdown = readFileSync(join(downloads, files.find((name) => name.endsWith(".md"))), "utf8");
   check("markdownContainsPhysicsAndQuestion", markdown.includes(question) && markdown.includes("射程") && markdown.includes("35.35"), markdown.slice(0,1200));
+  const detailSource = await browser.evaluate(`document.querySelector('section[aria-label="详细讲解"] [data-solution-source]')?.getAttribute('data-solution-source') || ''`);
+  check("markdownPreservesNativeMathSources", exam.source.length > 0 && detailSource.length > 0 && markdown.includes(exam.source) && markdown.includes(detailSource) && /^\$\$$/m.test(markdown) && !markdown.includes('```'), {displayDelimiters:markdown.split('$$').length - 1, containsExam:markdown.includes(exam.source), containsDetail:markdown.includes(detailSource)});
   log("downloads", files.map((name) => ({file:join(downloads,name), bytes:statSync(join(downloads,name)).size})));
 });
