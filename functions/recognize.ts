@@ -7,23 +7,27 @@ import { completeJson, declaredError, stringList, type UserContent } from "./llm
 const MAX_IMAGE_CHARS = 10_000_000; // base64 data URL 上限约 7.5MB 原图
 const MAX_TEXT_CHARS = 4000;
 
-const SYSTEM_PROMPT = `你是物理题识别引擎。读取用户上传的物理题图片和/或文字，只输出一个 JSON 对象，不要输出任何其他文字或 Markdown 代码块。
+const SYSTEM_PROMPT = `你是物理题识别引擎。读取用户上传的物理题图片和/或文字，判断题型并提取参数，只输出一个 JSON 对象，不要输出任何其他文字或 Markdown 代码块。
 JSON 结构：
 {
   "version": 1,
-  "template": "projectile",
+  "template": "projectile" | "incline" | "blockBoard" | "collision1d",
   "statement": "题干原文（含已知量与所求，简体中文）",
-  "params": { "v0": 数值, "angleDeg": 数值, "h0": 数值, "g": 数值 },
-  "ask": ["range", "maxHeight", "flightTime", "landingSpeed", "apexTime"] 的子集,
+  "params": { ... },
+  "ask": ["所求量 key"],
   "questions": ["用户自己的提问原文", "..."]
 }
+题型与参数（全部换算为国际单位）：
+- projectile（抛体/平抛/斜抛/竖直上抛）：params = { "v0": m/s, "angleDeg": 度（平抛 0，竖直上抛 90）, "h0": m, "g": 默认 9.8 }；ask 取 ["range","maxHeight","flightTime","apexTime","landingSpeed"] 的子集。
+- incline（物块沿斜面下滑/上滑，含摩擦）：params = { "m": kg, "angleDeg": 倾角, "mu": 动摩擦因数, "L": 斜面长度 m, "g": 默认 10, "v0": 沿斜面向下的初速度 m/s（由静止为 0）}；ask 取 ["acceleration","time","speed","heat","workG"] 的子集。
+- blockBoard（滑块滑上木板、相对滑动/共速/滑离）：params = { "m": 滑块 kg, "M": 木板 kg, "L": 木板长度 m, "v0": 滑块初速度 m/s, "mu": 滑块与木板间动摩擦因数, "g": 默认 10 }；ask 取 ["time","speed","slip","heat"] 的子集。
+- collision1d（一维正碰/弹性碰撞/完全非弹性碰撞）：params = { "m1": kg, "m2": kg, "v1": m/s, "v2": m/s, "e": 恢复系数（完全弹性 1，完全非弹性 0，一般 0~1）}；ask 取 ["v1After","v2After","loss","momentum"] 的子集。
 规则：
-- 当前仅支持抛体/平抛/斜抛/竖直上抛类题目，template 固定为 "projectile"。
-- 所有参数换算为国际单位：v0 (m/s)、angleDeg (度，平抛为 0，竖直上抛为 90)、h0 (m)、g 默认 9.8（题目指定 10 则用 10）。
-- statement 只放题目本身：已知条件、物理情境、所求量。不要把用户的提问混进 statement。
+- 只能使用上面四种 template 之一；优先选择与题干情境最匹配的模型。
+- 只把题目本身放进 statement（已知条件、物理情境、所求量），不要把用户的提问混进去。
 - questions 只放「用户提问」：为什么/是否/如何/怎样一类的概念性疑问，或图片中手写的额外问题。题目要求计算的量属于 ask，不属于 questions。没有提问时输出空数组 []。
 - 提问保留用户原话，最多 6 条，每条不超过 100 字；不要自行编造用户没问的问题。
-- 若题目不是抛体类，或关键参数缺失无法确定，输出 {"error":"unsupported_problem","reason":"简短中文原因"}。
+- 若题目不属于上述四类，或关键参数缺失无法确定，输出 {"error":"unsupported_problem","reason":"简短中文原因"}。
 - 图片模糊无法辨认且文字也不足以确定题目时，输出 {"error":"unreadable_image","reason":"简短中文原因"}。`;
 
 export type RecognizeOutcome =

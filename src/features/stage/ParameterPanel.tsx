@@ -4,40 +4,32 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Toggle } from "@/components/ui/toggle";
-import { G_PRESETS, type ParamNote, type ProjectileParams, type StageOptions } from "@/lib/types";
+import { G_PRESETS, type ParamNote, type ProblemParams, type StageOptions, type TemplateId } from "@/lib/types";
+import { TEMPLATES, templateMeta, type ParamConfig } from "@/lib/templates";
 
 export interface ParameterPanelProps {
-  params: ProjectileParams;
-  baseParams: ProjectileParams;
-  onParams: (p: ProjectileParams, immediate?: boolean) => void;
+  template: TemplateId;
+  params: ProblemParams;
+  baseParams: ProblemParams;
+  onTemplate: (template: TemplateId) => void;
+  onParams: (p: ProblemParams, immediate?: boolean) => void;
   options: StageOptions;
   onOptions: (patch: Partial<StageOptions>) => void;
   notes: ParamNote[];
   onRandom: () => void;
 }
 
-const PARAM_SLIDERS: {
-  key: keyof ProjectileParams;
-  symbol: string;
-  label: string;
-  unit: string;
-  min: number;
-  max: number;
-  step: number;
-}[] = [
-  { key: "v0", symbol: "v₀", label: "初速度", unit: "m/s", min: 0.5, max: 200, step: 0.5 },
-  { key: "angleDeg", symbol: "θ", label: "抛射角", unit: "°", min: 0, max: 90, step: 1 },
-  { key: "h0", symbol: "h₀", label: "初始高度", unit: "m", min: 0, max: 200, step: 0.5 },
-  { key: "g", symbol: "g", label: "重力加速度", unit: "m/s²", min: 1, max: 20, step: 0.1 },
-];
+function valueOf(params: ProblemParams, key: string): number {
+  return (params as unknown as Record<string, number>)[key] ?? 0;
+}
 
 function ParameterValueInput({ config, params, onCommit }: {
-  config: (typeof PARAM_SLIDERS)[number];
-  params: ProjectileParams;
+  config: ParamConfig;
+  params: ProblemParams;
   onCommit: (value: number) => void;
 }) {
   const { key, label, symbol, unit, min, max } = config;
-  const value = params[key];
+  const value = valueOf(params, key);
   const errorId = useId();
   const [draft, setDraft] = useState({ source: params, text: String(value) });
 
@@ -107,17 +99,33 @@ const DISPLAY_TOGGLES: { key: keyof StageOptions; label: string; hint: string }[
   { key: "glow", label: "发光", hint: "轨迹与小球的光晕" },
 ];
 
-export function ParameterPanel({ params, baseParams, onParams, options, onOptions, notes, onRandom }: ParameterPanelProps) {
-  const set = (patch: Partial<ProjectileParams>, immediate = false) => onParams({ ...params, ...patch }, immediate);
+export function ParameterPanel({ template, params, baseParams, onTemplate, onParams, options, onOptions, notes, onRandom }: ParameterPanelProps) {
+  const configs = templateMeta(template).params;
+  const set = (patch: Record<string, number>, immediate = false) => onParams({ ...params, ...patch } as ProblemParams, immediate);
 
   return (
     <section className="flex min-w-0 flex-col gap-4 p-5" aria-label="参数讲解与调整">
       <div className="space-y-2"><h2 className="text-sm font-semibold">动画参数</h2><p className="text-[11px] leading-5 text-muted-foreground">改变一个条件，看看运动会怎样。</p></div>
+      <div className="space-y-1.5">
+        <span className="text-[11px] text-muted-foreground">题型模板</span>
+        <Select value={template} onValueChange={(v) => onTemplate(v as TemplateId)}>
+          <SelectTrigger className="h-8 w-full text-xs" aria-label="题型模板">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TEMPLATES.map((t) => (
+              <SelectItem key={t.id} value={t.id}>
+                <span className="flex items-center gap-2"><span>{t.label}</span><span className="text-[10px] text-muted-foreground">{t.description}</span></span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <div className="flex flex-col divide-y divide-border">
-        {PARAM_SLIDERS.map((config) => {
+        {configs.map((config) => {
           const { key, symbol, label, min, max, step } = config;
           const note = notes.find((n) => n.key === key);
-          const value = params[key];
+          const value = valueOf(params, key);
           return (
             <section key={key} className="flex min-w-0 flex-col gap-2 py-3 first:pt-0 last:pb-0" aria-label={`${label} ${symbol}`}>
               <ParameterValueInput config={config} params={params} onCommit={(v) => set({ [key]: v }, true)} />
@@ -133,7 +141,7 @@ export function ParameterPanel({ params, baseParams, onParams, options, onOption
                   className="min-w-0 flex-1 [&_[data-slot=slider-range]]:bg-foreground/70 [&_[data-slot=slider-thumb]]:border-muted-foreground"
                 />
                 {key === "g" && (
-                  <Select value={String(params.g)} onValueChange={(v) => set({ g: Number(v) }, true)}>
+                  <Select value={String(value)} onValueChange={(v) => set({ g: Number(v) }, true)}>
                     <SelectTrigger size="sm" className="h-7 w-[104px] shrink-0 text-[11px]" aria-label="重力加速度预设">
                       <SelectValue />
                     </SelectTrigger>
@@ -141,8 +149,8 @@ export function ParameterPanel({ params, baseParams, onParams, options, onOption
                       {G_PRESETS.map((p) => (
                         <SelectItem key={p.value} value={String(p.value)}>{p.label}</SelectItem>
                       ))}
-                      {!G_PRESETS.some((p) => p.value === params.g) && (
-                        <SelectItem value={String(params.g)}>自定义 {params.g}</SelectItem>
+                      {!G_PRESETS.some((p) => p.value === value) && (
+                        <SelectItem value={String(value)}>自定义 {value}</SelectItem>
                       )}
                     </SelectContent>
                   </Select>

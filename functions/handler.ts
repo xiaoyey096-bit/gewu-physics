@@ -3,7 +3,7 @@
 // 浏览器同源调用 /functions/v1/app/<route>；网关会替换函数名段，这里只依赖后缀。
 
 import { validateProblem } from "./schema.ts";
-import { solveProjectile } from "./physics.ts";
+import { solveProblem } from "./physics.ts";
 import { recognizeInput } from "./recognize.ts";
 import { explainProblem } from "./explain.ts";
 import { stringList } from "./llm.ts";
@@ -48,7 +48,7 @@ export async function handler(request: Request): Promise<Response> {
       ok: true,
       service: "gewu-physics",
       schemaVersion: 1,
-      templates: ["projectile"],
+      templates: ["projectile", "incline", "blockBoard", "collision1d"],
       // 只暴露"是否已配置"，绝不暴露密钥本身。
       recognizeConfigured: Boolean(Deno.env.get("DASHSCOPE_API_KEY")),
     });
@@ -92,7 +92,7 @@ export async function handler(request: Request): Promise<Response> {
     if (!body) return json(400, { ok: false, error: "invalid_body" });
     const validated = validateProblem(body.problem);
     if (!validated.ok) return json(400, { ok: false, error: validated.error });
-    return json(200, { ok: true, result: solveProjectile(validated.problem.params) });
+    return json(200, { ok: true, result: solveProblem(validated.problem) });
   }
 
   return json(404, { ok: false, error: "not_found" });

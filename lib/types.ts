@@ -2,7 +2,7 @@
 
 export const SCHEMA_VERSION = 1;
 
-export type TemplateId = "projectile";
+export type TemplateId = "projectile" | "incline" | "blockBoard" | "collision1d";
 
 export interface ProjectileParams {
   v0: number;
@@ -11,11 +11,42 @@ export interface ProjectileParams {
   g: number;
 }
 
+/** 斜面下滑：从斜面顶端以 v0 沿斜面向下运动，L 为斜面长度。 */
+export interface InclineParams {
+  m: number;
+  angleDeg: number;
+  mu: number;
+  L: number;
+  g: number;
+  v0: number;
+}
+
+/** 滑块-木板：滑块 m 以 v0 滑上静止木板 M，板长 L，板与滑块间动摩擦因数 mu。 */
+export interface BlockBoardParams {
+  m: number;
+  M: number;
+  L: number;
+  v0: number;
+  mu: number;
+  g: number;
+}
+
+/** 一维正碰：m1、m2 以 v1、v2 运动，恢复系数 e（1 完全弹性，0 完全非弹性）。 */
+export interface CollisionParams {
+  m1: number;
+  m2: number;
+  v1: number;
+  v2: number;
+  e: number;
+}
+
+export type ProblemParams = ProjectileParams | InclineParams | BlockBoardParams | CollisionParams;
+
 export interface Problem {
   version: 1;
   template: TemplateId;
   statement: string;
-  params: ProjectileParams;
+  params: ProblemParams;
   ask: string[];
 }
 
@@ -35,15 +66,121 @@ export interface Series {
   vy: number[];
 }
 
-export interface SolveResult {
+export interface BodyTrack {
+  id: string;
+  label: string;
+  shape: "ball" | "box" | "board";
+  /** 采样轨迹；位置取物体中心（m）。 */
+  series: Series;
+  /** 渲染尺寸（m）：宽、高。 */
+  w: number;
+  h: number;
+}
+
+export interface SceneEvent {
+  id: string;
+  title: string;
+  time: number;
+  condition: string;
+}
+
+export interface ScalarTile {
+  key: string;
+  label: string;
+  value: number;
+  unit: string;
+  digits?: number;
+}
+
+export interface SceneBounds {
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+}
+
+export interface SolveResultBase {
+  template: TemplateId;
+  duration: number;
+  bounds: SceneBounds;
+  /** 参与动画的物体；第一个为主对象，与 series 相同。 */
+  bodies: BodyTrack[];
+  events: SceneEvent[];
+  scalars: ScalarTile[];
+  steps: SolutionStep[];
+  /** 主对象的时间序列（抛体即原 series）。 */
+  series: Series;
+}
+
+export interface ProjectileResult extends SolveResultBase {
   template: "projectile";
   range: number;
   maxHeight: number;
   flightTime: number;
   apexTime: number;
-  steps: SolutionStep[];
-  series: Series;
 }
+
+export interface InclineResult extends SolveResultBase {
+  template: "incline";
+  /** 沿斜面向下的加速度 m/s²（可为负，表示减速）。 */
+  a: number;
+  /** 运动总时间 s。 */
+  t: number;
+  /** 到达底端或停下时的速度 m/s（沿斜面向下为正）。 */
+  vEnd: number;
+  /** 斜面高差 m。 */
+  height: number;
+  /** 实际滑行距离 m。 */
+  distance: number;
+  /** 重力做功 J。 */
+  Wg: number;
+  /** 摩擦力做功 J（负值）。 */
+  Wf: number;
+  /** 摩擦生热 J。 */
+  heat: number;
+  /** 支持力 N。 */
+  normal: number;
+  /** 是否滑到底端（否则中途停下）。 */
+  reachedBottom: boolean;
+}
+
+export interface BlockBoardResult extends SolveResultBase {
+  template: "blockBoard";
+  /** 共速时间或滑离时间 s。 */
+  t: number;
+  /** 共速速度 m/s。 */
+  vCommon: number;
+  /** 相对位移 m（滑离时等于 L）。 */
+  slip: number;
+  /** 摩擦生热 J。 */
+  heat: number;
+  /** 滑块末速度 m/s。 */
+  vBlockEnd: number;
+  /** 木板末速度 m/s。 */
+  vBoardEnd: number;
+  /** 滑块是否滑离木板（相对位移达到板长）。 */
+  slidOff: boolean;
+}
+
+export interface CollisionResult extends SolveResultBase {
+  template: "collision1d";
+  /** 碰撞时刻 s。 */
+  tHit: number;
+  /** 碰后速度 m/s。 */
+  v1After: number;
+  v2After: number;
+  /** 总动量 kg·m/s。 */
+  momentum: number;
+  /** 碰前、碰后总动能 J。 */
+  keBefore: number;
+  keAfter: number;
+  /** 动能损失 J。 */
+  loss: number;
+  /** 是否发生接触（接近速度为正）。 */
+  hit: boolean;
+}
+
+export type SolveResult = ProjectileResult | InclineResult | BlockBoardResult | CollisionResult;
 
 export interface HealthInfo {
   ok: true;
@@ -76,7 +213,7 @@ export interface SessionRecord {
   imageName?: string;
   problem: Problem;
   /** 识别/输入时的原始参数，供「重置参数」回到初始状态。 */
-  baseParams: ProjectileParams;
+  baseParams: ProblemParams;
   questions: string[];
   questionTimes?: Record<string, number>;
   solutionEdits?: Partial<Record<"exam" | "detail", { text: string; signature: string }>>;
@@ -115,7 +252,7 @@ export interface Prefs {
 }
 
 export interface ParamNote {
-  key: keyof ProjectileParams;
+  key: string;
   symbol: string;
   label: string;
   meaning: string;

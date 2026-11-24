@@ -26,9 +26,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { solveProjectile } from "@/lib/physics";
+import { solveProblem } from "@/lib/physics";
 import { filterSessions, sortSessions, useStore } from "@/lib/store";
 import { kindLabel } from "@/lib/text";
+import { templateMeta } from "@/lib/templates";
 import type { LibraryFilter, LibrarySort, ProjectRecord, SessionRecord } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ImageLightbox } from "./ImageLightbox";
@@ -516,7 +517,7 @@ function ProjectGroup(props: GroupProps) {
       {!collapsed && (
         <ul className="ml-2 flex flex-col gap-0.5 border-l border-border pl-1.5">
           {items.map((session) => {
-            const result = solveProjectile(session.problem.params);
+            const result = solveProblem(session.problem);
             const isRenaming = renaming?.kind === "session" && renaming.id === session.id;
             const isDropBefore = dropTarget?.projectId === project.id && dropTarget.beforeId === session.id;
             return (
@@ -595,7 +596,7 @@ function ProjectGroup(props: GroupProps) {
                         className="mt-0.5 grid h-8 w-11 shrink-0 place-items-center rounded font-mono text-[9px] text-white"
                         style={{ background: "linear-gradient(135deg, var(--gw-vx), var(--gw-info))" }}
                       >
-                        {kindLabel(session.problem.params)}
+                        {session.problem.template === "projectile" ? kindLabel(session.problem.params) : templateMeta(session.problem.template).short}
                       </span>
                     )}
                     <span className="min-w-0 flex-1">
@@ -621,9 +622,13 @@ function ProjectGroup(props: GroupProps) {
                         <span className="block truncate text-xs font-medium">{session.title}</span>
                       )}
                       <span className="mt-0.5 flex flex-wrap items-center gap-1 font-mono text-[10px] text-muted-foreground">
-                        <span>X {result.range.toFixed(1)}m</span>
-                        <span>·</span>
-                        <span>T {result.flightTime.toFixed(2)}s</span>
+                        {result.template === "projectile" ? <>
+                          <span>X {result.range.toFixed(1)}m</span>
+                          <span>·</span>
+                          <span>T {result.flightTime.toFixed(2)}s</span>
+                        </> : result.scalars.slice(0, 2).map((s, i) => (
+                          <span key={s.key}>{i > 0 && "· "}{s.label} {s.value.toFixed(s.digits ?? 1)}{s.unit}</span>
+                        ))}
                       </span>
                     </span>
                   </button>

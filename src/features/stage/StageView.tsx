@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
-import { criticalStates, motionObject, sceneTransform, stateAt, trajectoryTimeAt } from "@/lib/motion";
+import { criticalStates, motionObject, sceneTransform, stateOf, trajectoryTimeAt } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { VideoExport } from "./VideoExport";
 import { Badge } from "@/components/ui/badge";
@@ -7,9 +7,9 @@ import { drawScene } from "@/lib/renderer";
 import { FALLBACK_PALETTE, readPalette } from "@/lib/palette";
 import { downloadDataUrl } from "@/lib/image";
 import { phaseIndexAt } from "@/lib/explain";
-import { kindLabel } from "@/lib/text";
+import { templateBadge, templateLabel } from "@/lib/templates";
 import type { Palette } from "@/lib/renderer";
-import type { Phase, Problem, ProjectileParams, SolveResult, StageApi, StageOptions } from "@/lib/types";
+import type { Phase, Problem, ProblemParams, SolveResult, StageApi, StageOptions } from "@/lib/types";
 import { useReducedMotion } from "@/lib/use-media";
 import { cn } from "@/lib/utils";
 import { ControlDeck } from "./ControlDeck";
@@ -17,7 +17,7 @@ import { ControlDeck } from "./ControlDeck";
 interface Props {
   problem: Problem;
   result: SolveResult;
-  params: ProjectileParams;
+  params: ProblemParams;
   options: StageOptions;
   speed: number;
   onSpeed: (s: number) => void;
@@ -47,12 +47,12 @@ export function StageView(props: Props) {
   const [playing, setPlaying] = useState(false);
   const [palette, setPalette] = useState<Palette>(FALLBACK_PALETTE);
   const reducedMotion = useReducedMotion();
-  const duration = result.series.duration;
+  const duration = result.duration;
   const object = motionObject(problem);
   const dragRef = useRef<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const [dragBranch, setDragBranch] = useState<"rise" | "fall">("rise");
-  const vertical = Math.abs(Math.cos(params.angleDeg * Math.PI / 180)) < 1e-6;
+  const vertical = problem.template === "projectile" && Math.abs(Math.cos((params as { angleDeg: number }).angleDeg * Math.PI / 180)) < 1e-6;
 
   const paint = useCallback((t: number) => {
     const canvas = canvasRef.current;
@@ -194,8 +194,8 @@ export function StageView(props: Props) {
     const canvas = canvasRef.current, wrap = wrapRef.current;
     if (!canvas || !wrap || !wrap.clientWidth) return;
     const out = snapshot(t, canvas.width, canvas.height, canvas.width / wrap.clientWidth);
-    downloadDataUrl(out.toDataURL("image/png"), `格物-${kindLabel(params)}-${label}-${t.toFixed(2)}s-${Date.now()}.png`);
-  }, [snapshot, params]);
+    downloadDataUrl(out.toDataURL("image/png"), `格物-${templateBadge(problem)}-${label}-${t.toFixed(2)}s-${Date.now()}.png`);
+  }, [snapshot, problem]);
   const exportCritical = useCallback(() => {
     const points = criticalStates(problem, result);
     const out = document.createElement("canvas");
@@ -222,7 +222,7 @@ export function StageView(props: Props) {
   };
   const beginDrag = (event: PointerEvent<HTMLCanvasElement>) => {
     if (event.button !== 0 || duration <= 0 || dragRef.current !== null) return;
-    const p = pointerPosition(event), view = sceneTransform(p.width, p.height, result), point = stateAt(params, timeRef.current);
+    const p = pointerPosition(event), view = sceneTransform(p.width, p.height, result), point = stateOf(result, timeRef.current);
     if (Math.hypot(p.x - view.X(point.x), p.y - view.Y(point.y)) > 26) return;
     event.preventDefault();
     event.currentTarget.focus({ preventScroll: true });
@@ -262,7 +262,9 @@ export function StageView(props: Props) {
           className={cn("absolute inset-0 h-full w-full touch-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400", dragging ? "cursor-grabbing" : "cursor-grab")}
           role="img"
           tabIndex={0}
-          aria-label={`抛体运动动画：拖动${object.label}沿轨迹定位；方向键微调，Home 回起点，End 到落地`}
+          aria-label={problem.template === "projectile"
+            ? `抛体运动动画：拖动${object.label}沿轨迹定位；方向键微调，Home 回起点，End 到落地`
+            : `${templateLabel(problem)}动画：拖动${object.label}沿轨迹定位；方向键微调，Home 回起点，End 到终点`}
           onPointerDown={beginDrag}
           onPointerMove={moveDrag}
           onPointerUp={endDrag}
@@ -275,15 +277,29 @@ export function StageView(props: Props) {
           }}
         />
         <div className="pointer-events-none absolute right-2 top-2 flex flex-col items-end gap-1">
-          <Badge variant="secondary" className="px-2 text-[10px]">{kindLabel(params)} · 解析解</Badge>
+          <Badge variant="secondary" className="px-2 text-[10px]">{templateBadge(problem)} · 解析解</Badge>
           <span className="rounded bg-background/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
             {playing ? "播放中" : time >= duration && duration > 0 ? "已结束" : "已暂停"} · {speed}×
           </span>
         </div>
         <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap items-center gap-2 rounded-lg bg-background/70 px-2 py-1 text-[10px] text-muted-foreground">
-          <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-vx)" }} />水平 v₀ₓ</span>
-          <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-vy)" }} />竖直 vᵧ</span>
-          <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-v)" }} />合速度 v</span>
+          {problem.template === "projectile" ? <>
+            <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-vx)" }} />水平 v₀ₓ</span>
+            <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-vy)" }} />竖直 vᵧ</span>
+            <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-v)" }} />合速度 v</span>
+          </> : problem.template === "incline" ? <>
+            <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-v)" }} />速度 v</span>
+            <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-vy)" }} />重力分量</span>
+            <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-vx)" }} />摩擦力</span>
+          </> : problem.template === "blockBoard" ? <>
+            <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-v)" }} />滑块 v₁</span>
+            <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-vx)" }} />木板 v₂</span>
+            <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-vy)" }} />相对位移 Δs</span>
+          </> : <>
+            <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-v)" }} />A 球速度</span>
+            <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-vx)" }} />B 球速度</span>
+            <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-vy)" }} />碰撞时刻</span>
+          </>}
         </div>
       </div>
 

@@ -18,55 +18,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ApiError, requestJson } from "@/lib/api";
 import { fileToDataUrl } from "@/lib/image";
-import { solveProjectile } from "@/lib/physics";
+import { solveProblem } from "@/lib/physics";
 import { useStore } from "@/lib/store";
 import { parseParamsFromText, splitStatementAndQuestions, kindLabel, deriveTitle } from "@/lib/text";
-import { G_PRESETS, type Problem, type ProjectileParams, type SessionSource } from "@/lib/types";
+import { EXAMPLES, templateMeta, type TemplateExample } from "@/lib/templates";
+import { suggestedQuestions } from "@/lib/explain";
+import { G_PRESETS, type Problem, type ProblemParams, type SessionSource, type TemplateId } from "@/lib/types";
 import { ImageLightbox } from "@/src/features/library/ImageLightbox";
 
-interface ExamplePreset {
-  key: string;
-  label: string;
-  statement: string;
-  params: ProjectileParams;
-  ask: string[];
-  questions: string[];
-}
-
-const EXAMPLES: ExamplePreset[] = [
-  {
-    key: "oblique",
-    label: "斜抛 · 30°",
-    statement:
-      "从地面以 20 m/s 的初速度、与水平方向成 30° 角斜向上抛出一小球，不计空气阻力，g 取 9.8 m/s²。求小球的射程、最大高度与飞行时间。",
-    params: { v0: 20, angleDeg: 30, h0: 0, g: 9.8 },
-    ask: ["range", "maxHeight", "flightTime"],
-    questions: ["为什么水平方向的速度一直不变？"],
-  },
-  {
-    key: "horizontal",
-    label: "平抛 · 20 m 高台",
-    statement:
-      "一架无人机在 20 m 高空以 12 m/s 的速度水平飞行，投放一个物资包，不计空气阻力，g 取 9.8 m/s²。求落地点与投放点的水平距离、落地时间与落地速度大小。",
-    params: { v0: 12, angleDeg: 0, h0: 20, g: 9.8 },
-    ask: ["range", "flightTime", "landingSpeed"],
-    questions: ["飞行时间由什么决定？"],
-  },
-  {
-    key: "vertical",
-    label: "竖直上抛 · g=10",
-    statement:
-      "以 15 m/s 的初速度竖直向上抛出一石子，g 取 10 m/s²，不计空气阻力。求石子上升的最大高度与回到抛出点所用的时间。",
-    params: { v0: 15, angleDeg: 90, h0: 0, g: 10 },
-    ask: ["maxHeight", "flightTime"],
-    questions: ["最高点时加速度为零吗？"],
-  },
-];
+const TEMPLATE_IDS: TemplateId[] = ["projectile", "incline", "blockBoard", "collision1d"];
 
 interface Draft {
+  template: TemplateId;
   statement: string;
   questions: string[];
-  params: ProjectileParams;
+  params: ProblemParams;
   ask: string[];
   image?: string;
   imageName?: string;
@@ -129,9 +95,10 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
     return () => window.removeEventListener("paste", onPaste);
   }, [stage, acceptFile]);
 
-  const useExample = (preset: ExamplePreset) => {
+  const useExample = (preset: TemplateExample) => {
     setError(null);
     setDraft({
+      template: preset.template,
       statement: preset.statement,
       questions: preset.questions,
       params: preset.params,
@@ -162,7 +129,7 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
           method: "POST",
           body: JSON.stringify({ image, text: trimmed || undefined }),
         })) as { ok: true; problem: Problem; questions?: string[] };
-        if (!data?.problem || data.problem.template !== "projectile") {
+        if (!data?.problem || !TEMPLATE_IDS.includes(data.problem.template)) {
           throw new ApiError("识别结果不完整，请重试。", "invalid_response");
         }
         problem = data.problem;
@@ -173,13 +140,13 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
         const parsed = parseParamsFromText(trimmed);
         problem = {
           version: 1,
-          template: "projectile",
+          template: parsed.template,
           statement:
             localSplit.statement ||
             trimmed ||
             (image ? "（图片题目）云端识别未成功，请补充题干或直接校正下方参数。" : "（未提供题干）"),
           params: parsed.params,
-          ask: ["range", "maxHeight", "flightTime"],
+          ask: templateMeta(parsed.template).asks,
         };
         questions = localSplit.questions;
         notice = `${msg} 已改用本地解析，请校正参数后再生成动画。`;
@@ -188,10 +155,10 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
       const parsed = parseParamsFromText(trimmed);
       problem = {
         version: 1,
-        template: "projectile",
+        template: parsed.template,
         statement: localSplit.statement || trimmed || "（未提供题干，可直接调整参数探究）",
         params: parsed.params,
-        ask: ["range", "maxHeight", "flightTime"],
+        ask: templateMeta(parsed.template).asks,
       };
       questions = localSplit.questions;
       notice =
@@ -201,10 +168,11 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
     }
 
     setDraft({
+      template: problem.template,
       statement: problem.statement,
       questions,
       params: problem.params,
-      ask: problem.ask?.length ? problem.ask : ["range", "maxHeight", "flightTime"],
+      ask: problem.ask?.length ? problem.ask : templateMeta(problem.template).asks,
       image,
       imageName,
       source,
@@ -218,8 +186,8 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
     if (!draft) return;
     const problem: Problem = {
       version: 1,
-      template: "projectile",
-      statement: draft.statement.trim() || deriveTitle("", draft.params),
+      template: draft.template,
+      statement: draft.statement.trim() || deriveTitle("", draft.params, draft.template),
       params: draft.params,
       ask: draft.ask,
     };
@@ -234,12 +202,12 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
   };
 
   const draftResult = useMemo(
-    () => (draft ? solveProjectile(draft.params) : null),
+    () => (draft ? solveProblem({ version: 1, template: draft.template, statement: draft.statement, params: draft.params, ask: draft.ask }) : null),
     [draft],
   );
 
-  const setParam = (patch: Partial<ProjectileParams>) => {
-    setDraft((d) => (d ? { ...d, params: { ...d.params, ...patch } } : d));
+  const setParam = (patch: Record<string, number>) => {
+    setDraft((d) => (d ? { ...d, params: { ...d.params, ...patch } as ProblemParams } : d));
   };
 
   return (
@@ -395,7 +363,7 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
                   {recent.map((s) => {
-                    const r = solveProjectile(s.problem.params);
+                    const r = solveProblem(s.problem);
                     return (
                       <button
                         key={s.id}
@@ -411,7 +379,7 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
                               className="grid h-9 w-12 place-items-center rounded font-mono text-[10px] text-white"
                               style={{ background: "linear-gradient(135deg, var(--gw-info), var(--site-accent))" }}
                             >
-                              {kindLabel(s.problem.params)}
+                              {s.problem.template === "projectile" ? kindLabel(s.problem.params) : templateMeta(s.problem.template).short}
                             </span>
                           )}
                           <span className="min-w-0 flex-1 truncate text-sm font-medium">{s.title}</span>
@@ -420,8 +388,12 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
                           {s.problem.statement}
                         </span>
                         <span className="mt-auto flex flex-wrap gap-1.5 font-mono text-[10px] text-muted-foreground">
-                          <span className="rounded bg-secondary px-1.5 py-0.5">X {r.range.toFixed(1)} m</span>
-                          <span className="rounded bg-secondary px-1.5 py-0.5">T {r.flightTime.toFixed(2)} s</span>
+                          {r.template === "projectile" ? <>
+                            <span className="rounded bg-secondary px-1.5 py-0.5">X {r.range.toFixed(1)} m</span>
+                            <span className="rounded bg-secondary px-1.5 py-0.5">T {r.flightTime.toFixed(2)} s</span>
+                          </> : r.scalars.slice(0, 2).map((s2) => (
+                            <span key={s2.key} className="rounded bg-secondary px-1.5 py-0.5">{s2.label} {s2.value.toFixed(s2.digits ?? 1)} {s2.unit}</span>
+                          ))}
                           {s.questions.length > 0 && (
                             <span className="rounded px-1.5 py-0.5 text-vx" style={{ background: "color-mix(in oklab, var(--gw-vx) 14%, transparent)" }}>
                               {s.questions.length} 问
@@ -445,7 +417,7 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
                 <span className="h-px w-8 gw-hairline" />
                 第二步 · 确认题干与提问
               </span>
-              <Badge variant="secondary" className="ml-auto">{kindLabel(draft.params)}</Badge>
+              <Badge variant="secondary" className="ml-auto">{draft.template === "projectile" ? kindLabel(draft.params) : templateMeta(draft.template).short}</Badge>
             </div>
 
             {draft.notice && (
@@ -482,11 +454,7 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
                   onChange={(e) => setDraft({ ...draft, statement: e.target.value })}
                 />
                 <div className="grid grid-cols-2 gap-2">
-                  {([
-                    { key: "v0", label: "初速度 v₀", unit: "m/s", min: 0.5, max: 200, step: 0.5 },
-                    { key: "angleDeg", label: "抛射角 θ", unit: "°", min: 0, max: 90, step: 1 },
-                    { key: "h0", label: "初始高度 h₀", unit: "m", min: 0, max: 200, step: 0.5 },
-                  ] as const).map((field) => (
+                  {templateMeta(draft.template).params.filter((f) => f.key !== "g").map((field) => (
                     <label key={field.key} className="flex flex-col gap-1">
                       <span className="text-[11px] text-muted-foreground">{field.label}</span>
                       <span className="flex items-center gap-1">
@@ -496,22 +464,23 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
                           min={field.min}
                           max={field.max}
                           step={field.step}
-                          value={draft.params[field.key]}
+                          value={(draft.params as unknown as Record<string, number>)[field.key] ?? 0}
                           aria-label={field.label}
                           className="h-8 font-mono text-xs"
                           onChange={(e) => {
                             const v = Number(e.target.value);
-                            if (Number.isFinite(v)) setParam({ [field.key]: Math.min(field.max, Math.max(field.min, v)) } as Partial<ProjectileParams>);
+                            if (Number.isFinite(v)) setParam({ [field.key]: Math.min(field.max, Math.max(field.min, v)) });
                           }}
                         />
                         <span className="text-[11px] text-muted-foreground">{field.unit}</span>
                       </span>
                     </label>
                   ))}
+                  {"g" in draft.params && (
                   <label className="flex flex-col gap-1">
                     <span className="text-[11px] text-muted-foreground">重力加速度 g</span>
                     <Select
-                      value={String(draft.params.g)}
+                      value={String((draft.params as unknown as Record<string, number>).g)}
                       onValueChange={(v) => setParam({ g: Number(v) })}
                     >
                       <SelectTrigger size="sm" className="h-8 w-full font-mono text-xs" aria-label="重力加速度">
@@ -521,12 +490,13 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
                         {G_PRESETS.map((p) => (
                           <SelectItem key={p.value} value={String(p.value)}>{p.label} m/s²</SelectItem>
                         ))}
-                        {!G_PRESETS.some((p) => Math.abs(p.value - draft.params.g) < 1e-6) && (
-                          <SelectItem value={String(draft.params.g)}>自定义 {draft.params.g} m/s²</SelectItem>
+                        {!G_PRESETS.some((p) => Math.abs(p.value - (draft.params as unknown as Record<string, number>).g) < 1e-6) && (
+                          <SelectItem value={String((draft.params as unknown as Record<string, number>).g)}>自定义 {(draft.params as unknown as Record<string, number>).g} m/s²</SelectItem>
                         )}
                       </SelectContent>
                     </Select>
                   </label>
+                  )}
                 </div>
               </section>
 
@@ -548,7 +518,7 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
                   生成动画后，在右侧「对话」查看逐条回答与数值依据。
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {["为什么水平方向的速度一直不变？", "抛射角多大时射程最远？", "落地时的速度有多大？"].map((q) => (
+                  {suggestedQuestions({ version: 1, template: draft.template, statement: draft.statement, params: draft.params, ask: draft.ask }).slice(0, 3).map((q) => (
                     <Button
                       key={q}
                       variant="outline"
@@ -563,15 +533,11 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
                   <div className="mt-auto flex flex-col gap-2 rounded-xl gw-inset p-3">
                     <span className="text-[11px] text-muted-foreground">按当前参数实时算出</span>
                     <div className="flex flex-wrap gap-1.5 font-mono text-xs">
-                      <span className="rounded px-2 py-1" style={{ background: "color-mix(in oklab, var(--gw-v) 14%, transparent)", color: "var(--gw-v)" }}>
-                        射程 {draftResult.range.toFixed(2)} m
-                      </span>
-                      <span className="rounded px-2 py-1" style={{ background: "color-mix(in oklab, var(--gw-vy) 16%, transparent)", color: "var(--gw-vy)" }}>
-                        最高 {draftResult.maxHeight.toFixed(2)} m
-                      </span>
-                      <span className="rounded px-2 py-1" style={{ background: "color-mix(in oklab, var(--gw-vx) 14%, transparent)", color: "var(--gw-vx)" }}>
-                        飞行 {draftResult.flightTime.toFixed(2)} s
-                      </span>
+                      {draftResult.scalars.slice(0, 3).map((s2, i) => (
+                        <span key={s2.key} className="rounded px-2 py-1" style={{ background: `color-mix(in oklab, ${["var(--gw-v)", "var(--gw-vy)", "var(--gw-vx)"][i % 3]} 14%, transparent)`, color: ["var(--gw-v)", "var(--gw-vy)", "var(--gw-vx)"][i % 3] }}>
+                          {s2.label} {s2.value.toFixed(s2.digits ?? 2)} {s2.unit}
+                        </span>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -602,7 +568,7 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
 
       <footer className="w-full pb-4">
         <p className="text-xs leading-relaxed text-muted-foreground">
-          当前支持斜抛 · 平抛 · 竖直上抛（更多题型陆续加入）。先求解，再动画：动画与题解数值严格一致。
+          当前支持抛体 · 斜面下滑 · 滑块木板 · 一维碰撞（更多题型陆续加入）。先求解，再动画：动画与题解数值严格一致。
         </p>
       </footer>
 

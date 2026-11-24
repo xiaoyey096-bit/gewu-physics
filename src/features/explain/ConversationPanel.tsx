@@ -7,10 +7,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { SUGGESTED_QUESTIONS } from "@/lib/explain";
+import { suggestedQuestions } from "@/lib/explain";
 import { copyText } from "@/lib/image";
+import { templateMeta } from "@/lib/templates";
 import { ASK_LABELS } from "@/lib/text";
-import type { Explanation, Problem, ProjectileParams, SessionRecord } from "@/lib/types";
+import type { Explanation, Problem, ProblemParams, SessionRecord } from "@/lib/types";
 
 interface Props {
   session: SessionRecord;
@@ -24,23 +25,23 @@ interface Props {
   onEditProblem: (problem: Problem) => void;
 }
 
-const FIELDS = [
-  { key: "v0", label: "初速度 v₀", unit: "m/s", min: 0.5, max: 200 },
-  { key: "angleDeg", label: "抛射角 θ", unit: "°", min: 0, max: 90 },
-  { key: "h0", label: "初始高度 h₀", unit: "m", min: 0, max: 200 },
-  { key: "g", label: "重力加速度 g", unit: "m/s²", min: 1, max: 20 },
-] as const;
 const frame = "rounded-xl border border-sky-200 bg-sky-50/20 p-3 dark:border-sky-800 dark:bg-sky-950/15";
+
+const fieldsOf = (template: SessionRecord["problem"]["template"]) => templateMeta(template).params;
+const paramsOf = (base: ProblemParams, template: SessionRecord["problem"]["template"]) =>
+  Object.fromEntries(fieldsOf(template).map(({ key }) => [key, String((base as unknown as Record<string, number>)[key])])) as Record<string, string>;
 
 export function ConversationPanel({ session, explanation, configured, aiBusy, insight, exploring, onAsk, onAiExplain, onEditProblem }: Props) {
   const [question, setQuestion] = useState("");
   const [editing, setEditing] = useState(false);
   const [statement, setStatement] = useState(session.problem.statement);
-  const [params, setParams] = useState(() => Object.fromEntries(FIELDS.map(({ key }) => [key, String(session.baseParams[key])])) as Record<keyof ProjectileParams, string>);
+  const [params, setParams] = useState(() => paramsOf(session.baseParams, session.problem.template));
   const [ask, setAsk] = useState(session.problem.ask);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const valid = !!statement.trim() && ask.length > 0 && FIELDS.every(({ key, min, max }) => params[key].trim() && Number.isFinite(Number(params[key])) && Number(params[key]) >= min && Number(params[key]) <= max);
+  const meta = templateMeta(session.problem.template);
+  const fields = fieldsOf(session.problem.template);
+  const valid = !!statement.trim() && ask.length > 0 && fields.every(({ key, min, max }) => params[key]?.trim() && Number.isFinite(Number(params[key])) && Number(params[key]) >= min && Number(params[key]) <= max);
 
   const copy = async (text: string) => {
     const ok = await copyText(text);
@@ -69,7 +70,7 @@ export function ConversationPanel({ session, explanation, configured, aiBusy, in
             <Dialog open={editing} onOpenChange={(open) => {
               if (open) {
                 setStatement(session.problem.statement);
-                setParams(Object.fromEntries(FIELDS.map(({ key }) => [key, String(session.baseParams[key])])) as Record<keyof ProjectileParams, string>);
+                setParams(paramsOf(session.baseParams, session.problem.template));
                 setAsk(session.problem.ask);
               }
               setEditing(open);
@@ -80,14 +81,14 @@ export function ConversationPanel({ session, explanation, configured, aiBusy, in
                 <form className="space-y-4" onSubmit={(event) => {
                   event.preventDefault();
                   if (!valid) return;
-                  onEditProblem({ ...session.problem, statement: statement.trim(), params: Object.fromEntries(FIELDS.map(({ key }) => [key, Number(params[key])])) as unknown as ProjectileParams, ask });
+                  onEditProblem({ ...session.problem, statement: statement.trim(), params: Object.fromEntries(fields.map(({ key }) => [key, Number(params[key])])) as unknown as ProblemParams, ask });
                   setEditing(false);
                 }}>
                   <label className="flex flex-col gap-2 text-xs">题目内容<Textarea value={statement} onChange={(event) => setStatement(event.target.value)} aria-label="编辑题目内容" rows={5} required className="leading-7" /></label>
                   <div className="grid grid-cols-2 gap-3">
-                    {FIELDS.map(({ key, label, unit, min, max }) => <label key={key} className="flex flex-col gap-1 text-xs">{label}（{unit}）<Input type="number" inputMode="decimal" step="any" min={min} max={max} required value={params[key]} aria-label={`编辑${label}`} onChange={(event) => setParams({ ...params, [key]: event.target.value })} /></label>)}
+                    {fields.map(({ key, label, symbol, unit, min, max }) => <label key={key} className="flex flex-col gap-1 text-xs">{label}（{unit || "—"}）<Input type="number" inputMode="decimal" step="any" min={min} max={max} required value={params[key] ?? ""} aria-label={`编辑${label}${symbol ? ` ${symbol}` : ""}`} onChange={(event) => setParams({ ...params, [key]: event.target.value })} /></label>)}
                   </div>
-                  <fieldset className="flex flex-wrap gap-3"><legend className="mb-2 text-xs">所求量</legend>{Object.entries(ASK_LABELS).map(([key, label]) => <label key={key} className="flex items-center gap-2 text-xs"><Checkbox checked={ask.includes(key)} onCheckedChange={(checked) => setAsk(checked ? [...ask, key] : ask.filter((value) => value !== key))} />{label}</label>)}</fieldset>
+                  <fieldset className="flex flex-wrap gap-3"><legend className="mb-2 text-xs">所求量</legend>{meta.asks.map((key) => <label key={key} className="flex items-center gap-2 text-xs"><Checkbox checked={ask.includes(key)} onCheckedChange={(checked) => setAsk(checked ? [...ask, key] : ask.filter((value) => value !== key))} />{ASK_LABELS[key] ?? key}</label>)}</fieldset>
                   {!valid && <p role="status" className="text-xs text-destructive">请填写题干、范围内的参数，并至少选择一个所求量。</p>}
                   <DialogFooter><Button type="button" variant="outline" onClick={() => setEditing(false)}>取消</Button><Button type="submit" disabled={!valid}>保存题目</Button></DialogFooter>
                 </form>
@@ -120,7 +121,7 @@ export function ConversationPanel({ session, explanation, configured, aiBusy, in
         })}
         {insight && <article className={frame} aria-label="AI 补充讲解"><h3 className="mb-2 text-xs font-semibold">AI 补充讲解</h3><p className="whitespace-pre-wrap break-words text-xs leading-7">{insight}</p></article>}
         <div className="flex flex-wrap gap-2">
-          {SUGGESTED_QUESTIONS.filter((q) => !session.questions.includes(q)).slice(0, 3).map((q) => <Button key={q} variant="outline" size="xs" className="h-auto whitespace-normal border-sky-200 py-2 text-left dark:border-sky-800" onClick={() => send(q)}>{q}</Button>)}
+          {suggestedQuestions(session.problem).filter((q) => !session.questions.includes(q)).slice(0, 3).map((q) => <Button key={q} variant="outline" size="xs" className="h-auto whitespace-normal border-sky-200 py-2 text-left dark:border-sky-800" onClick={() => send(q)}>{q}</Button>)}
         </div>
       </div>
       <form className="m-3 mt-0 flex shrink-0 items-end gap-2 rounded-xl border border-sky-200 bg-card p-2 dark:border-sky-800" onSubmit={(event) => { event.preventDefault(); send(question); }}>

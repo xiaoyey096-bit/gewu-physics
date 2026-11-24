@@ -15,7 +15,7 @@ export function CriticalPoints({ problem, result, onSeek, onExport, onExportAll 
   return <details className="max-h-[44dvh] shrink-0 overflow-y-auto border-t border-border bg-sky-50/20 p-3 dark:bg-sky-950/10" aria-label="题目临界状态">
     <summary className="cursor-pointer text-xs font-semibold">对象与临界状态</summary>
     <div className="mt-3 space-y-3">
-      <p className="text-[11px] leading-5 text-muted-foreground">运动对象：{motionObject(problem).label} · 理想抛体<br />双击状态跳转；触屏可点“定位”。仅分析当前模型，不含接触或碰撞。</p>
+      <p className="text-[11px] leading-5 text-muted-foreground">运动对象：{motionObject(problem).label} · {problem.template === "projectile" ? "理想抛体" : problem.template === "incline" ? "斜面滑动模型" : problem.template === "blockBoard" ? "滑块—木板模型" : "一维碰撞模型"}<br />双击状态跳转；触屏可点“定位”。仅分析当前模型{problem.template === "projectile" ? "，不含接触或碰撞" : "，数值由解析解给出"}。</p>
       <ul className="space-y-2">
         {criticalStates(problem, result).map(point => <li key={point.id} className="rounded-lg border border-sky-200/70 p-2 dark:border-sky-900">
           <button type="button" className="w-full rounded text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`临界状态 ${point.title}`} onDoubleClick={() => onSeek(point.time)} onKeyDown={event => {

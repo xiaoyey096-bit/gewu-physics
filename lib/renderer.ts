@@ -1,10 +1,11 @@
 // Canvas 场景渲染器：把求解出的时间序列画成物理动画。
 // 纯同步绘制（不依赖 rAF），首帧/隐藏标签页下也能正确出图；背景氛围由 CSS 层承担，画布保持透明。
 
-import type { Problem, SolveResult, StageOptions } from "./types";
+import type { BlockBoardParams, CollisionParams, InclineParams, Problem, ProjectileParams, SolveResult, StageOptions } from "./types";
 import { DEFAULT_STAGE } from "./types";
 import { sampleAt } from "./physics";
 import { motionObject, sceneTransform, stateAt } from "./motion";
+import { drawTemplateScene } from "./renderer-multi";
 
 export interface Palette {
   bg: string;
@@ -85,8 +86,13 @@ export function drawScene(
   options: StageOptions = DEFAULT_STAGE,
 ): void {
   const { problem, result, time } = state;
+  if (result.template !== "projectile") {
+    drawTemplateScene(ctx, width, height, state, palette, options);
+    return;
+  }
   const { series } = result;
-  const cur = { ...stateAt(problem.params, time), t: time };
+  const params = problem.params as ProjectileParams;
+  const cur = { ...stateAt(params, time), t: time };
   const T = series.duration || 1;
 
   ctx.clearRect(0, 0, width, height);
@@ -143,7 +149,7 @@ export function drawScene(
   ctx.restore();
 
   // 发射台
-  const h0 = problem.params.h0;
+  const h0 = params.h0;
   if (h0 > 0.01) {
     ctx.fillStyle = palette.surface;
     ctx.strokeStyle = palette.muted;
@@ -306,10 +312,10 @@ export function drawScene(
   }
 
   // 出手角与初速度方向（仅在起始阶段显示，避免与瞬时矢量重叠）
-  const vScale = Math.min(3.2, (Math.min(availW, availH) * 0.34) / Math.max(problem.params.v0, 1));
-  if (cur.t < T * 0.07 && problem.params.angleDeg > 0.5) {
-    const rad = (problem.params.angleDeg * Math.PI) / 180;
-    const r = Math.min(46, Math.max(24, problem.params.v0 * vScale * 0.5));
+  const vScale = Math.min(3.2, (Math.min(availW, availH) * 0.34) / Math.max(params.v0, 1));
+  if (cur.t < T * 0.07 && params.angleDeg > 0.5) {
+    const rad = (params.angleDeg * Math.PI) / 180;
+    const r = Math.min(46, Math.max(24, params.v0 * vScale * 0.5));
     ctx.save();
     ctx.strokeStyle = palette.vy;
     ctx.globalAlpha = 0.8;
@@ -318,7 +324,7 @@ export function drawScene(
     ctx.arc(X(0), Y(h0), r, -rad, 0);
     ctx.stroke();
     ctx.textAlign = "left";
-    label(ctx, `θ = ${problem.params.angleDeg}°`, X(0) + r * 0.72, Y(h0) - r * 0.34, palette.vy, palette.bg);
+    label(ctx, `θ = ${params.angleDeg}°`, X(0) + r * 0.72, Y(h0) - r * 0.34, palette.vy, palette.bg);
     ctx.restore();
     ctx.textAlign = "left";
   }
@@ -407,11 +413,11 @@ export function drawScene(
   // 能量视角：轨迹上方的空白用来实时验证机械能守恒（按单位质量计，J/kg）
   if (options.energy && width >= 340) {
     const compact = width < 640;
-    const g = problem.params.g;
+    const g = params.g;
     const ekx = 0.5 * cur.vx * cur.vx;
     const eky = 0.5 * cur.vy * cur.vy;
     const ep = g * Math.max(0, cur.y);
-    const total = 0.5 * problem.params.v0 * problem.params.v0 + g * problem.params.h0;
+    const total = 0.5 * params.v0 * params.v0 + g * params.h0;
     const pw = compact ? 186 : 216;
     const ph = compact ? 82 : 92;
     const px = width - PAD.right - pw - 2;

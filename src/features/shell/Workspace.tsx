@@ -7,10 +7,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError, requestJson } from "@/lib/api";
 import { buildExplanation, solutionMarkdown } from "@/lib/explain";
 import { downloadText } from "@/lib/image";
-import { solveProjectile } from "@/lib/physics";
+import { solveProblem } from "@/lib/physics";
 import { useStore } from "@/lib/store";
 import { deriveTitle } from "@/lib/text";
-import type { Problem, ProjectileParams, StageApi, StageOptions } from "@/lib/types";
+import { EXAMPLES, randomParams, templateMeta } from "@/lib/templates";
+import type { Problem, ProblemParams, StageApi, StageOptions, TemplateId } from "@/lib/types";
 import { useBreakpoint } from "@/lib/use-media";
 import { BrandMark, PaneToggle, ServiceBadge, StorageBadge, ThemeToggle } from "./Chrome";
 import { PaneResizer } from "./PaneResizer";
@@ -59,8 +60,8 @@ export function StudyLayout({ configured, onNewProblem, onHome, onOpenSession, t
       <SlidersHorizontal className="size-5 text-muted-foreground" />
       <h2 className="text-sm font-semibold">动画参数</h2>
       <p className="text-xs leading-6 text-muted-foreground">生成一道题目后，在这里调节参数，观察轨迹和题解如何一起变化。</p>
-      <div className="rounded-xl border border-dashed border-border p-4 font-mono text-xs leading-8 text-muted-foreground">v₀ · 初速度<br />θ · 抛射角<br />h₀ · 初始高度<br />g · 重力加速度</div>
-      <p className="text-[11px] leading-6 text-muted-foreground">当前支持理想抛体运动：斜抛、平抛与竖直上抛。其他章节模型尚未接入。</p>
+      <div className="rounded-xl border border-dashed border-border p-4 font-mono text-xs leading-8 text-muted-foreground">抛体 v₀ · θ · h₀<br />斜面 m · θ · μ · L<br />滑块木板 m · M · L · μ<br />碰撞 m₁ · m₂ · v₁ · v₂ · e</div>
+      <p className="text-[11px] leading-6 text-muted-foreground">当前接入抛体、斜面下滑、滑块木板与一维碰撞四类模型；其余题型陆续加入。</p>
     </div>
   );
   const rightPanel = (
@@ -138,12 +139,12 @@ export function Workspace({ configured, onNewProblem, onHome, onOpenSession, sho
   const session = activeSession!;
   const sessionRef = useRef(session);
   sessionRef.current = session;
-  const [liveParams, setLiveParams] = useState<ProjectileParams>(session.problem.params);
+  const [liveParams, setLiveParams] = useState<ProblemParams>(session.problem.params);
   const [activePhase, setActivePhase] = useState(0);
   const [aiBusy, setAiBusy] = useState(false);
   const aiVersion = useRef(0);
   const stageApi = useRef<StageApi | null>(null);
-  const pendingRef = useRef<ProjectileParams | null>(null);
+  const pendingRef = useRef<ProblemParams | null>(null);
   const timerRef = useRef<number | null>(null);
 
   const flush = useCallback(() => {
@@ -160,7 +161,7 @@ export function Workspace({ configured, onNewProblem, onHome, onOpenSession, sho
     return () => { window.removeEventListener("pagehide", flush); flush(); aiVersion.current++; };
   }, [flush]);
 
-  const onParams = useCallback((params: ProjectileParams, immediate = false) => {
+  const onParams = useCallback((params: ProblemParams, immediate = false) => {
     aiVersion.current++;
     setLiveParams(params);
     pendingRef.current = params;
@@ -168,8 +169,8 @@ export function Workspace({ configured, onNewProblem, onHome, onOpenSession, sho
     if (immediate) flush();
     else timerRef.current = window.setTimeout(flush, 320);
   }, [flush]);
-  const result = useMemo(() => solveProjectile(liveParams), [liveParams]);
   const problem = useMemo<Problem>(() => ({ ...session.problem, params: liveParams }), [session.problem, liveParams]);
+  const result = useMemo(() => solveProblem(problem), [problem]);
   const paramsSaved = JSON.stringify(liveParams) === JSON.stringify(session.problem.params);
   const explanation = useMemo(() => buildExplanation(problem, result, session.questions, paramsSaved ? session.aiAnswers : undefined), [problem, result, session.questions, session.aiAnswers, paramsSaved]);
   const phases = explanation.phases;
@@ -182,10 +183,35 @@ export function Workspace({ configured, onNewProblem, onHome, onOpenSession, sho
   const leave = (action: () => void) => { flush(); action(); };
 
   const randomize = useCallback(() => {
-    const pick = <T,>(list: T[]): T => list[Math.floor(Math.random() * list.length)];
-    onParams({ v0: Number((6 + Math.random() * 34).toFixed(1)), angleDeg: pick([0, 15, 30, 37, 45, 53, 60, 75, 90]), h0: pick([0, 0, 0, 5, 10, 20]), g: pick([9.8, 9.8, 10, 1.6, 3.7]) });
+    onParams(randomParams(sessionRef.current.problem.template));
     toast("已随机生成一组参数", { duration: 2200 });
   }, [onParams]);
+  const changeTemplate = useCallback((template: TemplateId) => {
+    const current = sessionRef.current;
+    if (template === current.problem.template) return;
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+    pendingRef.current = null;
+    aiVersion.current++;
+    const meta = templateMeta(template);
+    const example = EXAMPLES.find((e) => e.template === template);
+    const params = meta.defaults;
+    const statement = example?.statement ?? current.problem.statement;
+    const ask = example?.ask ?? meta.asks;
+    setLiveParams(params);
+    const next: Problem = { version: 1, template, statement, params, ask };
+    updateSession(current.id, {
+      problem: next,
+      baseParams: params,
+      title: deriveTitle(statement, params, template),
+      questions: [],
+      questionTimes: {},
+      insight: undefined,
+      aiAnswers: undefined,
+      solutionEdits: {},
+    });
+    toast(`已切换到「${meta.label}」示例`, { duration: 2200 });
+  }, [updateSession]);
   const exportSolution = useCallback(() => {
     const current = sessionRef.current;
     downloadText(solutionMarkdown(problem, result, explanation, current.questions, { exam: current.solutionEdits?.exam?.text, detail: current.solutionEdits?.detail?.text }), `格物题解-${current.title.slice(0, 20)}.md`);
@@ -209,7 +235,7 @@ export function Workspace({ configured, onNewProblem, onHome, onOpenSession, sho
     updateSession(current.id, {
       problem: next,
       baseParams: next.params,
-      title: current.title === deriveTitle(current.problem.statement, current.baseParams) ? deriveTitle(next.statement, next.params) : current.title,
+      title: current.title === deriveTitle(current.problem.statement, current.baseParams, current.problem.template) ? deriveTitle(next.statement, next.params, next.template) : current.title,
       insight: undefined,
       aiAnswers: undefined,
     });
@@ -228,7 +254,10 @@ export function Workspace({ configured, onNewProblem, onHome, onOpenSession, sho
     const version = ++aiVersion.current;
     setAiBusy(true);
     try {
-      const data = await requestJson("/functions/v1/app/explain", { method: "POST", body: JSON.stringify({ problem, summary: { range: result.range, maxHeight: result.maxHeight, flightTime: result.flightTime, apexTime: result.apexTime }, questions: current.questions }) }) as { ok: true; insight?: string; answers?: { question: string; answer: string }[] };
+      const summary = result.template === "projectile"
+        ? { range: result.range, maxHeight: result.maxHeight, flightTime: result.flightTime, apexTime: result.apexTime }
+        : { duration: result.duration, scalars: Object.fromEntries(result.scalars.map((s) => [s.key, { label: s.label, value: s.value, unit: s.unit }])) };
+      const data = await requestJson("/functions/v1/app/explain", { method: "POST", body: JSON.stringify({ problem, summary, questions: current.questions }) }) as { ok: true; insight?: string; answers?: { question: string; answer: string }[] };
       if (version !== aiVersion.current) return;
       updateSession(current.id, { insight: data.insight?.trim() || current.insight, aiAnswers: data.answers?.length ? data.answers : current.aiAnswers });
       toast.success("AI 深度讲解已生成");
@@ -240,7 +269,7 @@ export function Workspace({ configured, onNewProblem, onHome, onOpenSession, sho
   return (
     <StudyLayout configured={configured} onNewProblem={() => leave(onNewProblem)} onHome={() => leave(onHome)} onOpenSession={openSession} title={session.title} projectName={projects.find((p) => p.id === session.projectId)?.name} showProblem={showProblem} onBackToLibrary={onBackToLibrary}
       criticalPoints={<CriticalPoints problem={problem} result={result} onSeek={(time) => { stageApi.current?.pause(); stageApi.current?.seek(time); }} onExport={(time, label) => stageApi.current?.exportPng(time, label)} onExportAll={() => stageApi.current?.exportCritical()} />}
-      parameters={<ParameterPanel params={liveParams} baseParams={session.baseParams} onParams={onParams} options={prefs.stage} onOptions={onOptions} notes={explanation.params} onRandom={randomize} />}
+      parameters={<ParameterPanel template={problem.template} params={liveParams} baseParams={session.baseParams} onTemplate={changeTemplate} onParams={onParams} options={prefs.stage} onOptions={onOptions} notes={explanation.params} onRandom={randomize} />}
       conversation={<ConversationPanel session={session} explanation={explanation} configured={configured} aiBusy={aiBusy} insight={paramsSaved ? session.insight : undefined} exploring={exploring} onAsk={ask} onAiExplain={aiExplain} onEditProblem={editProblem} />}>
       {exploring && <p className="text-xs text-vy">当前为参数探究：动画与题解使用右侧参数，原题干保持不变。</p>}
       <section className="min-w-0 rounded-2xl border border-border bg-card p-3 sm:p-4" aria-label="动画演示">
