@@ -1,64 +1,108 @@
-# Qoder Sites React starter
+# 格物 · 物理解题动画助手
 
-A React, TypeScript, Vite and Tailwind frontend with a bundled Shadcn component catalog. Vite produces static files in `dist/`. Server behavior belongs in the optional Qoder Sites Function, not a Node or framework server.
+把一道物理题变成**可交互的运动动画**：上传题目照片或直接输入题干，AI 先区分「题目内容」与「你的问题」，
+再求解出解析解，最后由同一个解驱动动画、参数讲解、分步题解和逐条答疑。
 
-## Develop
+线上地址：<https://gewu-physics-brq725ks9ut.qoder.zone>（当前为私有访问，需要 Qoder 账号）
 
-Use a Node version accepted by `package.json` (`^22.13.0 || >=24.0.0`). Select an installed compatible runtime and keep it selected for installation, development and build:
+面向读者：中学生与大学物理初学者。
 
-```sh
+## 为什么不是「AI 画个动画」
+
+动画如果靠预设关键帧或经验曲线拟合，学生拖一下滑杆就会发现数值对不上。本项目的基本约束是
+**先求解，再动画**：
+
+- `lib/physics.ts` 用分段解析解算出位移、速度、加速度、摩擦力的突变时刻；
+- 画布（`lib/renderer.ts`）、讲解文案（`lib/explain.ts`）、题解 Markdown 三处数值全部取自这一份解；
+- 改任何一个参数就重新求解，动画、读数、题解同步变化，不存在「近似口径」。
+
+多个临界状态是这类题目的难点（滑块和木板谁先动、共速后摩擦力怎么变），所以动画时间轴上每个临界态都会
+列出「这一阶段新出现了哪些力、哪些力消失」，并用醒目色箭头在画布上标出。
+
+## 功能
+
+- **题目输入**：照片 / PDF / Word / txt / 直接打字；Enter 提交，Ctrl+Enter 换行；识别结果可先编辑再确认。
+- **动画舞台**：播放、倍速、阶段跳转、7 个显示开关（轨迹、矢量、频闪、尺寸标注、能量面板等），参数滑杆实时重算。
+- **右侧面板**：讲解 / 题解 / 答疑三个页签；对象与受力页签列出每个研究对象的受力随阶段变化。
+- **导出**：当前帧 PNG、临界帧拼图 PNG、MP4 视频、题解 Markdown，全部在浏览器本地完成。
+- **题库**：项目分组（支持无限层级文件夹）、搜索、筛选、排序、拖拽、批量管理、删除可撤销。
+- **本地优先**：题目与作答存在浏览器 IndexedDB，三级回退（IndexedDB → localStorage → 内存），不上传作业数据。
+- **响应式与主题**：1440 / 1100 / 390 三档布局，浅色 / 深色 / 跟随系统。
+
+已支持的物理模型：平抛与斜抛、斜面（含静/动摩擦力转换）、滑块—木板板块模型、一维弹性与非弹性碰撞。
+
+## 技术栈
+
+| 层 | 选型 |
+| --- | --- |
+| 前端 | React 19 + TypeScript + Vite + Tailwind CSS 4 + shadcn/Radix 原语 |
+| 物理与绘制 | 自研解析求解器 + Canvas 2D 同步绘制 + KaTeX 公式 |
+| 本地能力 | pdf.js（PDF 取字）、docx 解析、mp4-muxer（浏览器内导出视频） |
+| 服务端 | Qoder Sites Edge Function（Deno），仅做识题、讲解、答疑三类 LLM 调用 |
+| 存储 | 浏览器 IndexedDB；服务端不落库 |
+
+## 本地运行
+
+```bash
 npm ci
-npm run dev
+npm run dev            # Vite 前端，默认 http://127.0.0.1:5173
+npm run dev:function   # 可选：本地函数服务，监听 http://127.0.0.1:8000
+npm run build          # tsc --noEmit + vite build → dist
+npm run check:function # deno check functions/index.ts
 ```
 
-Use the loopback URL printed by Vite. Edit `src/App.tsx`, `src/globals.css` and the title/description in `index.html`. Replace the sample page with the requested product before presenting a first meaningful preview. Import existing UI primitives from `@/components/ui/<component>` and compose them for the site's design. The neutral starter theme is a starting point, not the finished visual direction.
+两个端口是两条独立进程：**5173 是页面**，**8000 是服务端函数的本地替身**。Vite 把页面上的
+`/functions/v1/app/*` 请求代理到 `127.0.0.1:8000`；线上则由 Qoder Sites 网关直接路由到 Edge Function，
+本地代理配置不代表线上路由。只跑 `npm run dev` 也能看动画、题解、导出等全部本地功能。
 
-For production output:
+本地没有 `DASHSCOPE_API_KEY`，因此 `/app/recognize`、`/app/explain` 返回 503
+`service_not_configured`、`/app/health` 里 `recognizeConfigured:false` —— 这是设计如此：
+密钥只存在于站点的服务端环境变量中，由管理员在部署平台上手工填写，从不进入代码、仓库或本地终端。
+带密钥的链路只能在发布后验证。
 
-```sh
-npm run build
-npm run preview
+## 实测验收
+
+改完必须跑探针：用无头 Chrome 通过 CDP 发真实鼠标键盘事件，断言 DOM 与画布像素，并记录控制台报错。
+探针默认打 `http://127.0.0.1:5173`，如果本地 Vite 起了别的端口（5173 被占用时会顺延），用 `BASE` 覆盖：
+
+```bash
+BASE=http://127.0.0.1:5173 node dev/v8-forces.mjs
 ```
 
-The build fixes `NODE_ENV=production` before loading Vite, independently of the terminal environment. It checks the frontend and bundled component types and emits `dist/index.html` and assets. `npm run preview` serves this output locally. Reuse passing checks while source is unchanged; no additional unit-test suite or browser QA is required by the template.
+`dev/` 下的主要探针：`v2-smoke`（入口到导出）、`v2-interact`（滑杆/倍速/主题/刷新持久化）、
+`v2-lib`（重命名、删除+撤销、排序、批量）、`v2-responsive`（三档屏宽无横向溢出）、
+`v3-workspace`（单双击、标准答题、详解双解法）、`v4-math`（KaTeX 渲染与超长公式回退）、
+`v4-export`（PNG / MP4，含真实解码校验）、`v4-motion`（临界态与能量守恒数值）、
+`v5-audit`（照片入口降级、题干/提问拆分、参数极值）、`v6-templates`（多模型）、
+`v7-folders`（项目分组、子文件夹、示例题库只播种一次）、
+`v8-forces`（受力分析与临界状态）、`v10-upload`（真实 docx / pdf 文件走上传链路）。
 
-## Optional Function
+通过口径：`consoleErrors` 为空、画布有实际绘制像素、导出文件真实生成且能被解码。
+报告与截图落在 `dev/downloads/`，该目录不参与站点构建，也不要提交。
 
-The default page is entirely static and does not call a Function. For server behavior, adapt the public, credential-free example in `functions/handler.ts`. `functions/index.ts` is the Deno deployment entry point. Check `deno --version` before using a separate terminal for:
+## 目录
 
-```sh
-npm run check:function
-npm run dev:function
+```
+lib/            物理内核与共享层（在仓库根，不在 src 下，见下方别名说明）
+src/features/   intake 输入 / stage 舞台与控制 / explain 右栏 / library 题库 / shell 三栏外壳
+components/ui/  shadcn 原语
+functions/      Edge Function：handler / recognize / explain / llm / schema / physics
+dev/            仅开发期：CDP 探针、截图与本地题目夹具，不参与站点构建
+docs/           高中物理示例题库
+vendor/         第三方样式表原件及其许可证
 ```
 
-If Deno is unavailable, the static frontend can still build and run. Keep Function validation pending until Deno or an equivalent existing Function checker is available; `npm run build` checks the frontend only. Local proxy requests also need a running compatible Function server.
+别名 `@` 指向**项目根**（`tsconfig.json` 与 vite alias 一致）：`@/lib/...` 是根目录 `lib/`，
+`@/components/ui/...` 是根目录 `components/`，src 内部特性要写 `@/src/features/...`。
+仓库里还有一份本地开发文档（协作约定与完整坑清单），随开发环境维护，未纳入发布产物。
 
-The local service binds to `127.0.0.1:8000`; Vite development and built preview proxy `/functions/v1/app` to it, preserving the path. Probe with an available HTTP tool or Node `fetch`; with `curl` installed, for example:
+## 发布
 
-```sh
-curl --fail 'http://127.0.0.1:5173/functions/v1/app?name=Visitor'
-```
+构建产物为 `dist/`，服务端代码为 `functions/`，通过 Qoder Sites 的 `prepare_site` →
+`publish_site` 流程发布；密钥以 `secretNames:["DASHSCOPE_API_KEY"]` 声明，值只在平台侧录入。
+部署不上传 `dev/`、`node_modules` 或源码。
 
-Use Vite's actual port if it differs. The same frontend request after deployment is routed by Qoder Sites. Local proxy configuration is not production routing. Keep local-only servers and fixtures in `dev/`, outside both publication directories. The included Function has no dependencies; add self-contained runtime imports as required. Frontend npm dependencies are not automatically installed in Functions.
+## 来源
 
-## Publish with Qoder Sites
-
-Open a local conversation in this project and follow the `sites-hosting` skill. Workspace registration is optional. Use the directory returned by `get_context` with:
-
-- `webDirectory: "dist"` after the build.
-- `spa: false` for the default single page; use `true` when adding client-side deep routes that need fallback.
-- `functionDirectory: "functions"` only if the application uses the Function. Omit it for static-only delivery.
-
-The Sites tools prepare artifacts and generate the publication descriptor; publish completed hosted work by default, unless the user explicitly requests a preview first or defers publication. Do not upload the project root, `node_modules`, `dev`, or source as the web artifact. A successful build or release does not prove an external integration works.
-
-For a new database-backed React page, follow the installed `sites-building` Skill's `references/function-backend.md`. Its assembled `assets/function-backend/` example includes `Notes.tsx`, Function routes and a schema using the platform's private database credentials. For a runnable records-and-attachments workbench, use that Skill's `references/records-example.md`; its setup command assembles a new project from this starter and keeps local fixtures outside deployment outputs. Preserve and adapt its application identity and ownership checks before exposing private records. `references/database.md`, `assets/database-react/App.tsx` and `assets/database-function/` are for existing legacy allocations only. These optional assets stay in the Skill rather than being copied into every static project.
-
-For database or Storage, follow the corresponding `sites-building` references and `sites-management` capability workflow. For AI, follow `sites-build-agent-app` and keep Cloud Agents access in the Function. Application credentials belong in server-side Sites Settings; frontend environment variables are public. This starter does not implement visitor login, database permissions, Cloud resource coordination or QCA sessions; add those only for the requested feature using the existing skills.
-
-See `PROVENANCE.md` and `vendor/` for source attribution and the preserved stylesheet license.
-
-After copying the starter, rename `gitignore.template` to `.gitignore` before installing dependencies. This keeps the file available in npm and bundled CLI resources.
-
-## Design workbench
-
-On Desktop, call `open_design_workbench` with the project name and design registration (pages and implemented Nudge capabilities). The tool creates the single `.站点名称.qoder.site` entry; update it through `update_design_workbench`. The starter deliberately contains no fixed-name project entry. Components consume `--site-*` variables defined in the existing application stylesheet. The workbench only previews temporary overrides and attaches requested changes to chat. The Agent implements changes and prepares publication artifacts before reporting completion; no dedicated theme file is required.
+本项目基于 Qoder Sites 的 React starter 模板改造，UI 组件目录、hooks、Tailwind 样式表与
+vendored shadcn CSS 的出处与许可证说明见 `PROVENANCE.md` 与 `vendor/`。
