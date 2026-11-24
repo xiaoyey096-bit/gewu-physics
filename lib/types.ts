@@ -271,13 +271,11 @@ export interface StageOptions {
   energy: boolean;
 }
 
-export type ThemeMode = "system" | "light" | "dark";
 export type RightTab = "parameters" | "chat" | "states";
 export type LibrarySort = "updated" | "created" | "title" | "manual";
 export type LibraryFilter = "all" | "photo" | "text" | "example";
 
 export interface Prefs {
-  theme: ThemeMode;
   leftOpen: boolean;
   rightOpen: boolean;
   leftWidth: number;
@@ -342,7 +340,6 @@ export const DEFAULT_STAGE: StageOptions = {
 };
 
 export const DEFAULT_PREFS: Prefs = {
-  theme: "light",
   leftOpen: true,
   rightOpen: true,
   leftWidth: 280,

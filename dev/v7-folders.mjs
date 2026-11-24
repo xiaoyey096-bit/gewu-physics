@@ -103,6 +103,23 @@ await runProbe("v7-folders", {port:9346, width:1440, height:900}, async ({browse
   await browser.clickSelector('button[aria-label="展开最近"]');
   check("recentSectionExpandsBack", (await browser.evaluate(readRecent)).rows === recent.rows, recent);
 
+  // 「最近」排在题库文件夹列表之后，并与上方用一条分隔线隔开；左栏底部不再放说明文案。
+  const placement = await browser.evaluate(`(() => {
+    const box = document.querySelector('section[aria-label="最近题目"]');
+    const folders = [...document.querySelectorAll('button[aria-label^="折叠项目 "], button[aria-label^="展开项目 "]')];
+    const aside = box?.closest('aside');
+    return {
+      recentTop: box?.getBoundingClientRect().top ?? null,
+      lastFolderBottom: folders.at(-1)?.getBoundingClientRect().bottom ?? 0,
+      separator: getComputedStyle(box).borderTopWidth,
+      footer: /按章节建立项目|题库保存在当前浏览器/.test(aside ? aside.textContent : document.body.textContent),
+    };
+  })()`);
+  log("recentPlacement", placement);
+  check("recentSitsBelowFolderTree", placement.recentTop !== null && placement.recentTop > placement.lastFolderBottom, placement);
+  check("recentSeparatedByTopRule", placement.separator !== "0px", placement.separator);
+  check("libraryFooterCopyRemoved", !placement.footer, placement.footer);
+
   // 临界状态面板已从题库栏移入右侧页签，左栏滚动区不再承载它。
   await browser.click("对象与受力", `${RIGHT} [role="tab"]`);
   await browser.wait(`!!document.querySelector('div[aria-label="题目临界状态"]')?.getClientRects().length`, "critical panel rendered");

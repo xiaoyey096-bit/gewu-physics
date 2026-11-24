@@ -6,6 +6,11 @@
    转义解析，报 Invalid code point，因此把 docs 排除在内容扫描之外。 */
 @source not "../docs/**/*";
 
+/* 界面只有浅色一套配色。Tailwind 4 的 dark: 默认跟随系统 prefers-color-scheme，会让 vendored
+   组件（弹层、徽标、日历等）在深色系统下自己变黑底，这里把它绑到已经删掉的 data-theme="dark"
+   钩子上，使所有 dark: 规则永不命中，而不用改动 components/ui 原件。 */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @utility scrollbar-thin {
   scrollbar-width: thin;
 }
@@ -23,6 +28,7 @@
 }
 
 :root {
+  color-scheme: light;
   --site-bg: #f8f9fb;
   --site-surface: #ffffff;
   --site-surface-2: #f0f2f5;
@@ -82,30 +88,6 @@
   --sidebar-accent-foreground: var(--site-fg);
   --sidebar-border: var(--site-border);
   --sidebar-ring: var(--site-accent);
-}
-
-:root[data-theme="dark"] {
-  --site-bg: #0e1a2b;
-  --site-surface: #15263c;
-  --site-surface-2: #1c3049;
-  --site-fg: #e8eef7;
-  --site-muted: #94a5be;
-  --site-border: #263c55;
-  --site-accent: #ff5c93;
-  --site-on-accent: #25090f;
-
-  --gw-vx: #2ee6cf;
-  --gw-vy: #fbbf24;
-  --gw-v: #ff5c93;
-  --gw-grid: #1e3348;
-  --gw-info: #6ea8ff;
-  --gw-ink: #dfe8f5;
-  --gw-body: #1b2c44;
-  --gw-fresh: #ff5c5c;
-  --gw-success: #8ede4f;
-  --gw-warning: #f59e0b;
-  --gw-danger: #ff6b6b;
-  --gw-scrim: rgba(4, 10, 20, 0.62);
 }
 
 @theme inline {

@@ -77,18 +77,9 @@ export function StageView(props: Props) {
     paintRef.current = paint;
   }, [paint]);
 
-  // 主题切换后重新取色（data-theme 由 store 写入）
+  // 只有浅色一套配色，挂载时取一次画布色，系统深浅偏好不再影响画布。
   useEffect(() => {
-    const refresh = () => setPalette(readPalette());
-    refresh();
-    const observer = new MutationObserver(refresh);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    mq.addEventListener("change", refresh);
-    return () => {
-      observer.disconnect();
-      mq.removeEventListener("change", refresh);
-    };
+    setPalette(readPalette());
   }, []);
 
   // 尺寸变化重绘

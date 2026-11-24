@@ -1,8 +1,7 @@
-import { Monitor, Moon, PanelLeft, PanelRight, Sun } from "lucide-react";
+import { PanelLeft, PanelRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useStore, type StorageMode } from "@/lib/store";
-import type { ThemeMode } from "@/lib/types";
+import type { StorageMode } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export function Atmosphere({ className }: { className?: string }) {
@@ -56,30 +55,6 @@ export function BrandMark({ compact = false }: { compact?: boolean }) {
         {!compact && <span className="mt-1 text-[11px] text-muted-foreground">物理解题动画助手</span>}
       </span>
     </div>
-  );
-}
-
-const THEME_ORDER: ThemeMode[] = ["dark", "light", "system"];
-const THEME_LABEL: Record<ThemeMode, string> = { dark: "深色黑板", light: "浅色学习空间", system: "跟随系统" };
-
-export function ThemeToggle() {
-  const { prefs, setPrefs } = useStore();
-  const Icon = prefs.theme === "dark" ? Moon : prefs.theme === "light" ? Sun : Monitor;
-  const next = THEME_ORDER[(THEME_ORDER.indexOf(prefs.theme) + 1) % THEME_ORDER.length];
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={`外观：${THEME_LABEL[prefs.theme]}，点击切换到${THEME_LABEL[next]}`}
-          onClick={() => setPrefs({ theme: next })}
-        >
-          <Icon />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">外观：{THEME_LABEL[prefs.theme]} → {THEME_LABEL[next]}</TooltipContent>
-    </Tooltip>
   );
 }
 

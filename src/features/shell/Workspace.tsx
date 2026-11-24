@@ -13,7 +13,7 @@ import { deriveTitle } from "@/lib/text";
 import { EXAMPLES, randomParams, templateMeta } from "@/lib/templates";
 import type { Problem, ProblemParams, StageApi, StageOptions, TemplateId } from "@/lib/types";
 import { useBreakpoint } from "@/lib/use-media";
-import { BrandMark, PaneToggle, ServiceBadge, StorageBadge, ThemeToggle } from "./Chrome";
+import { BrandMark, PaneToggle, ServiceBadge, StorageBadge } from "./Chrome";
 import { PaneResizer } from "./PaneResizer";
 import { LibraryPanel } from "@/src/features/library/LibraryPanel";
 import { StageView } from "@/src/features/stage/StageView";
@@ -51,7 +51,6 @@ export function StudyLayout({ configured, onNewProblem, onHome, onOpenSession, t
     <div className="flex h-full min-h-0 flex-col">
       <div className="p-4 pb-1"><Button variant="outline" className="w-full justify-start gap-2 rounded-xl" onClick={() => { setLeftDrawer(false); onNewProblem(); }}><Plus /> 新建题目会话</Button></div>
       <div className="min-h-0 flex-1"><LibraryPanel showProblem={!composing && showProblem} onBackToLibrary={onBackToLibrary} onOpenSession={(id, detail) => { if (!detail) setLeftDrawer(false); onOpenSession(id, detail); }} /></div>
-      {!showProblem && <p className="border-t border-border px-4 py-3 text-[10px] leading-5 text-muted-foreground">按章节建立项目，收藏每一次思考。<br />题库保存在当前浏览器。</p>}
     </div>
   );
   const controls = parameters ?? (
@@ -108,7 +107,6 @@ export function StudyLayout({ configured, onNewProblem, onHome, onOpenSession, t
               </SheetContent>
             </Sheet>
           )}
-          <ThemeToggle />
         </div>
       </header>
       <div className="flex min-h-0 flex-1">

@@ -500,21 +500,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  useEffect(() => {
-    const root = document.documentElement;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => {
-      const dark = prefs.theme === "dark" || (prefs.theme === "system" && mq.matches);
-      root.dataset.theme = dark ? "dark" : "light";
-      root.style.colorScheme = dark ? "dark" : "light";
-    };
-    apply();
-    if (prefs.theme === "system") {
-      mq.addEventListener("change", apply);
-      return () => mq.removeEventListener("change", apply);
-    }
-  }, [prefs.theme]);
-
   const createSession = useCallback(
     (input: NewSessionInput): SessionRecord => {
       const list = sessionsRef.current;

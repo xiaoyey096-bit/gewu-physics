@@ -1,20 +1,21 @@
 import type { Palette } from "./renderer";
 
+// 与 globals.css 的 :root 浅色令牌一致：首帧还没读到 CSS 变量时也不能画成深色。
 export const FALLBACK_PALETTE: Palette = {
-  bg: "#0e1a2b",
-  fg: "#e8eef7",
-  muted: "#94a5be",
-  border: "#263c55",
-  accent: "#ff5c93",
-  surface: "#15263c",
-  vx: "#2ee6cf",
-  vy: "#fbbf24",
-  resultant: "#ff5c93",
-  grid: "#1e3348",
-  info: "#6ea8ff",
-  ink: "#dfe8f5",
-  body: "#1b2c44",
-  fresh: "#ff5c5c",
+  bg: "#f8f9fb",
+  fg: "#242830",
+  muted: "#727985",
+  border: "#e4e7ec",
+  accent: "#303846",
+  surface: "#ffffff",
+  vx: "#00857a",
+  vy: "#b45309",
+  resultant: "#c81e5a",
+  grid: "#e3e7ee",
+  info: "#2f6df6",
+  ink: "#141821",
+  body: "#ffffff",
+  fresh: "#d92b2b",
 };
 
 export function readPalette(): Palette {

@@ -22,7 +22,7 @@ export default function App() {
 }
 
 function Shell() {
-  const { ready, sessions, activeSession, setActive, prefs } = useStore();
+  const { ready, sessions, activeSession, setActive } = useStore();
   const bp = useBreakpoint();
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [view, setView] = useState<"landing" | "intake" | "workspace">("landing");
@@ -74,8 +74,6 @@ function Shell() {
     setView("workspace");
   }, [setActive]);
 
-  const theme = prefs.theme === "system" ? "system" : prefs.theme;
-
   return (
     <>
       {!ready ? (
@@ -99,7 +97,7 @@ function Shell() {
         </StudyLayout>
       )}
       <Toaster
-        theme={theme}
+        theme="light"
         position={bp.mobile ? "top-center" : "bottom-right"}
         closeButton
         duration={3200}

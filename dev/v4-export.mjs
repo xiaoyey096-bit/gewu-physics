@@ -51,7 +51,7 @@ async function installOracle(problem, fields, canvasSelector) {
     const prefs = JSON.parse(localStorage.getItem("gewu-prefs-v2"));
     const canvas = document.querySelector(canvasSelector), slider = document.querySelector('[aria-label="动画时间轴"][role="slider"]');
     const paused = ![...document.querySelectorAll('[aria-label="动画控制区"] button')].some(b => b.textContent.trim() === "暂停");
-    const snapshot = { problem: { ...problem, params }, result: solveProjectile(params), palette: readPalette(), options: { ...prefs.stage }, prefs: { stage: prefs.stage, theme: prefs.theme, speed: prefs.speed, loop: prefs.loop }, time: Number(slider.getAttribute("aria-valuenow")), paused, width: canvas.width, height: canvas.height, scale: canvas.width / canvas.parentElement.clientWidth, live: q.stats(canvas) };
+    const snapshot = { problem: { ...problem, params }, result: solveProjectile(params), palette: readPalette(), options: { ...prefs.stage }, prefs: { stage: prefs.stage, speed: prefs.speed, loop: prefs.loop }, time: Number(slider.getAttribute("aria-valuenow")), paused, width: canvas.width, height: canvas.height, scale: canvas.width / canvas.parentElement.clientWidth, live: q.stats(canvas) };
     const liveCopy = q.make(canvas.width, canvas.height); liveCopy.getContext('2d').drawImage(canvas, 0, 0); q.images[`live-${name}`] = liveCopy;
     q.snapshots[name] = snapshot;
     return { ...snapshot, result: { flightTime: snapshot.result.flightTime, apexTime: snapshot.result.apexTime }, points: criticalStates(snapshot.problem, snapshot.result) };
@@ -77,8 +77,10 @@ async function installOracle(problem, fields, canvasSelector) {
     const alternate = q.render(s, t, actual.width, actual.height, scale, Object.fromEntries(Object.entries(s.options).map(([key, value]) => [key, !value])));
     return { ...q.stats(actual), match: q.diff(actual, expected), alternateOptions: q.diff(actual, alternate) };
   };
-  q.decodeVideo = async (base64, snapshotName, rate, otherPalette) => {
+  q.decodeVideo = async (base64, snapshotName, rate) => {
     const s = q.snapshots[snapshotName], video = document.createElement("video"); video.muted = true; video.playsInline = true; video.preload = "auto";
+    // 产品不再有深色模式，参照组改由探针自己造：整板反色，用来证明「帧沿用开始时的调色板」这条判据有分辨力。
+    const otherPalette = Object.fromEntries(Object.entries(s.palette).map(([key, value]) => [key, "#" + [1, 3, 5].map(i => (255 - parseInt(value.slice(i, i + 2), 16)).toString(16).padStart(2, "0")).join("")]));
     const url = URL.createObjectURL(q.blob(base64, "video/mp4"));
     const event = name => new Promise((resolve, reject) => {
       const timer = setTimeout(() => { cleanup(); reject(new Error(`video ${name} timeout`)); }, 6000);
@@ -112,7 +114,6 @@ await runProbe("v4-export", { port: 9362, width: 1600, height: 1000 }, async ({ 
   const downloads = join(dir, "downloads"); mkdirSync(downloads);
   await browser.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads, eventsEnabled: true });
   const ev = expression => browser.evaluate(expression);
-  const prefs = () => ev(`JSON.parse(localStorage.getItem('gewu-prefs-v2'))`);
   const text = selector => ev(`document.querySelector(${JSON.stringify(selector)})?.textContent || ''`);
   const capture = name => ev(`exportQA.capture(${JSON.stringify(name)})`);
   const inventory = () => readdirSync(downloads).sort();
@@ -166,8 +167,6 @@ await runProbe("v4-export", { port: 9362, width: 1600, height: 1000 }, async ({ 
       if (await ev(`document.querySelector('button[aria-label="${label}"]').getAttribute('aria-pressed')`) !== String(chosenOptions[key])) await browser.clickSelector(`${RIGHT} button[aria-label="${label}"]`);
     }
     await browser.clickSelector('button[aria-label="0.5 倍速"]');
-    for (let i = 0; i < 3 && (await prefs()).theme !== "system"; i++) await browser.clickSelector('button[aria-label^="外观："]');
-    await browser.wait(`document.documentElement.dataset.theme === 'light'`, "system theme is light");
     await pauseAt(0.32);
     const baseline = await capture("baseline"); log("baseline", baseline);
     expect("nonzero elevated trajectory with four distinct critical states", baseline.points.length === 4 && new Set(baseline.points.map(p => p.time)).size === 4 && baseline.time > 0 && baseline.time < baseline.result.flightTime, baseline.points);
@@ -203,17 +202,17 @@ await runProbe("v4-export", { port: 9362, width: 1600, height: 1000 }, async ({ 
     await browser.wait(`!!document.querySelector('progress[aria-label="视频导出进度"]')`, "native encoding progress appears");
     check("rate locked during native export", await ev(`document.querySelector('select[aria-label="视频倍速"]').disabled`));
     await shot("02-mp4-progress.png");
-    // An OS-theme change is external to the modal; subsequent frames must retain the start palette.
+    // 系统深色偏好是导出弹窗之外的外部事件：产品没有深色模式，编码中的底色必须与开始时一致。
     await browser.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
-    await browser.wait(`document.documentElement.dataset.theme === 'dark'`, "live system theme changes during encoding");
     const during = await capture("during-video");
+    check("osDarkFlipKeepsStartPalette", JSON.stringify(during.palette) === JSON.stringify(baseline.palette), { baseline: baseline.palette, during: during.palette });
     const movie = await nextDownload(successBefore, ".mp4");
     await browser.wait(`document.querySelector('[role="dialog"] [role="status"]')?.textContent.includes('MP4 已生成并下载')`, "MP4 success status", 120000);
     const progress = await ev("exportQA.progress"); log("successfulProgress", progress);
     // React may batch the final 100% render with the success/idle render; success was awaited above.
     check("visible encoding progress advances monotonically to success", progress.some(p => p.value > 0 && p.value < 100) && progress.at(-1)?.value >= 90 && progress.every((p, i) => !i || p.value >= progress[i - 1].value), progress);
     check("MP4 ftyp, avc1 video entry and avcC header", movie.bytes.toString("ascii", 4, 8) === "ftyp" && movie.bytes.indexOf(Buffer.from("avc1"), 100) > 100 && movie.bytes.indexOf(Buffer.from("avcC")) > 100, { path: movie.path, bytes: movie.bytes.length, avc1VideoOffset: movie.bytes.indexOf(Buffer.from("avc1"), 100), avcCOffset: movie.bytes.indexOf(Buffer.from("avcC")) });
-    const video = await ev(`exportQA.decodeVideo(${JSON.stringify(movie.bytes.toString("base64"))}, 'baseline', 0.25, ${JSON.stringify(during.palette)})`);
+    const video = await ev(`exportQA.decodeVideo(${JSON.stringify(movie.bytes.toString("base64"))}, 'baseline', 0.25)`);
     log("decodedVideo", video);
     check("native video playback and finite 1280x720 duration", video.playbackAdvanced && video.width === 1280 && video.height === 720 && Number.isFinite(video.duration) && Math.abs(video.duration - video.expectedDuration) <= 2 / 30, { width: video.width, height: video.height, duration: video.duration, expected: video.expectedDuration, playbackAdvanced: video.playbackAdvanced });
     check("decoded first/middle/last frames distinct", new Set(video.frames.map(f => f.hash)).size === 3, video.frames.map(f => ({ hash: f.hash, physics: f.physics, time: f.videoTime })));
@@ -224,10 +223,10 @@ await runProbe("v4-export", { port: 9362, width: 1600, height: 1000 }, async ({ 
       const data = await ev(`exportQA.images['video-${i}'].toDataURL('image/png').split(',')[1]`);
       writeFileSync(join(dir, `mp4-decoded-${["first", "middle", "last"][i]}.png`), Buffer.from(data, "base64"), { flag: "wx" });
     }
-    await stable("MP4 export (intentional OS palette change)", baseline, false);
+    await stable("MP4 export (OS dark flip must not move the picture)", baseline);
     await browser.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
-    await browser.wait(`document.documentElement.dataset.theme === 'light'`, "restore OS theme"); await closeVideo();
-    await stable("MP4 export restored theme", baseline);
+    await closeVideo();
+    await stable("MP4 export after restoring OS preference", baseline);
     await shot("03-mp4-completed.png");
 
     // Direct parameter inputs, not internal application setters, exercise the duration guards.

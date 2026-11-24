@@ -419,8 +419,9 @@ export function LibraryPanel({ onOpenSession, showProblem = false, onBackToLibra
         </div>
 
         <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-3" onScroll={() => setRecentScrolled(true)}>
+          {(tree.get(null) ?? []).map((project) => renderFolder(project, 0))}
           {recent.length > 0 && (
-            <section className="mb-2 border-b border-border pb-2" aria-label="最近题目">
+            <section className="mt-2 border-t border-border pt-2" aria-label="最近题目">
               <div className="flex items-center gap-1 px-1.5 py-1">
                 <Button
                   variant="ghost"
@@ -486,7 +487,6 @@ export function LibraryPanel({ onOpenSession, showProblem = false, onBackToLibra
               )}
             </section>
           )}
-          {(tree.get(null) ?? []).map((project) => renderFolder(project, 0))}
           {visible.length === 0 && (
             <p className="px-2 py-6 text-center text-xs text-muted-foreground">
               {sessions.length === 0 ? "题库为空，去入口上传第一道题。" : "没有匹配的题目，换个关键词或筛选条件。"}

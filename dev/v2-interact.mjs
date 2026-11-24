@@ -1,4 +1,4 @@
-// Parameter/phase/speed/display controls, pane resize, theme and same-session persistence.
+// Parameter/phase/speed/display controls, pane resize, light-only surface and same-session persistence.
 import { BASE, LEFT, RIGHT, ROW, CANVAS, runProbe, enterStudy, openExisting, fold, canvasState, timeState, waitFor, sleep } from "./cdp.mjs";
 
 await runProbe("v2-interact", {port:9334, width:1440, height:900}, async ({browser, check, expect, log, shot}) => {
@@ -9,11 +9,24 @@ await runProbe("v2-interact", {port:9334, width:1440, height:900}, async ({brows
   })()`);
   const pressed = (label) => browser.evaluate(`document.querySelector('button[aria-label=${JSON.stringify(label)}]')?.getAttribute('aria-pressed')`);
   const panelWidth = (selector) => browser.evaluate(`document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect().width`);
+  // 产品只有浅色一套配色：index.html 写死 data-theme="light" 且没有任何代码改写它，
+  // 底色与 color-scheme 都不该随系统深浅改变，样式表里也不该再有深色媒体查询。
+  const surface = () => browser.evaluate(`(() => {
+    const paint = (el) => el ? getComputedStyle(el).backgroundColor : null;
+    return {
+      dataTheme: document.documentElement.dataset.theme ?? null,
+      colorScheme: getComputedStyle(document.documentElement).colorScheme,
+      body: paint(document.body),
+      aside: paint(document.querySelector('[aria-label="题库与当前题目"]')),
+      darkMediaRules: [...document.styleSheets].reduce((n, sheet) => {
+        try { return n + [...sheet.cssRules].filter((rule) => rule.media && /prefers-color-scheme/.test(rule.media.mediaText)).length; } catch { return n; }
+      }, 0),
+    };
+  })()`);
   await browser.goto(BASE);
   await enterStudy(browser);
-  const initialPrefs = await prefs();
-  const initialTheme = await browser.evaluate('document.documentElement.dataset.theme');
-  check("themeMatchesStoredPreferenceOrLightDefault", initialTheme === (initialPrefs.theme === "system" ? await browser.evaluate(`matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'`) : initialPrefs.theme || "light"), {initialPrefs, initialTheme});
+  const lightSurface = await surface();
+  check("startsLightWithStaticLightTheme", lightSurface.dataTheme === "light" && lightSurface.colorScheme === "light" && lightSurface.darkMediaRules === 0, lightSurface);
   const sessionTitle = await openExisting(browser);
   const rowCount = await browser.evaluate(`document.querySelectorAll(${JSON.stringify(`${LEFT} ${ROW}`)}).length`);
   log("selectedExistingSession", sessionTitle);
@@ -106,14 +119,15 @@ await runProbe("v2-interact", {port:9334, width:1440, height:900}, async ({brows
     check(`${side}PaneResizes`, Math.abs(after.width - before.width) > 5 && after.preference !== before.preference, {before, after});
   }
 
-  // Theme modes need not change resolved color immediately (light -> system).
-  const oldMode = (await prefs()).theme || "light";
-  await browser.clickSelector('button[aria-label^="外观："]');
-  const changedMode = (await prefs()).theme;
-  check("themeModeCycles", changedMode !== oldMode && ["light", "system", "dark"].includes(changedMode), {oldMode, changedMode});
-  for (let n = 0; n < 3 && (await prefs()).theme !== "dark"; n++) await browser.clickSelector('button[aria-label^="外观："]');
-  await browser.wait(`document.documentElement.dataset.theme === 'dark'`, "dark theme applied");
-  await shot("13-dark-theme.png");
+  // 深色模式已从产品里删除：头部不再提供外观切换，系统深色偏好也不能改变任何底色。
+  check("noAppearanceToggleInHeader", !(await browser.exists('button[aria-label^="外观："]')));
+  await browser.send("Emulation.setEmulatedMedia", {features:[{name:"prefers-color-scheme",value:"dark"}]});
+  const osDark = await surface();
+  log("osDarkSurface", osDark);
+  check("systemDarkKeepsLightSurface", osDark.dataTheme === "light" && osDark.colorScheme === "light"
+    && osDark.body === lightSurface.body && osDark.aside === lightSurface.aside && osDark.darkMediaRules === 0, {lightSurface, osDark});
+  await shot("13-os-dark-still-light.png");
+  await browser.send("Emulation.setEmulatedMedia", {features:[{name:"prefers-color-scheme",value:"light"}]});
   const savedPrefs = await prefs();
   // Parameter persistence is intentionally debounced by the app; allow its 320ms flush.
   await sleep(500);
@@ -129,9 +143,11 @@ await runProbe("v2-interact", {port:9334, width:1440, height:900}, async ({brows
   check("sameSessionSelected", await browser.evaluate(`document.querySelector(${JSON.stringify(`${LEFT} button[aria-current="true"]`)})?.textContent.includes(${JSON.stringify(sessionTitle)})`));
   check("reloadDoesNotCreateSession", await browser.evaluate(`document.querySelectorAll(${JSON.stringify(`${LEFT} ${ROW}`)}).length`) === rowCount);
   check("anglePersists", restoredAngle?.value === 45, restoredAngle);
-  for (const key of ["theme", "speed", "loop", "leftWidth", "rightWidth", "leftOpen", "rightOpen"]) check(`${key}Persists`, restored[key] === savedPrefs[key], {expected:savedPrefs[key], actual:restored[key]});
+  for (const key of ["speed", "loop", "leftWidth", "rightWidth", "leftOpen", "rightOpen"]) check(`${key}Persists`, restored[key] === savedPrefs[key], {expected:savedPrefs[key], actual:restored[key]});
   for (const [label, key] of Object.entries(displays)) check(`${key}DisplayPersists`, restored.stage?.[key] === savedDisplays[key] && await pressed(label) === String(savedDisplays[key]), {expected:savedDisplays[key], actual:restored.stage?.[key]});
-  check("darkPreferenceHonoredOnReload", await browser.evaluate(`document.documentElement.dataset.theme === 'dark'`));
+  const reloadedSurface = await surface();
+  check("lightSurfaceSurvivesReload", reloadedSurface.dataTheme === "light" && reloadedSurface.body === lightSurface.body && reloadedSurface.aside === lightSurface.aside, reloadedSurface);
+  check("prefsNoLongerCarryTheme", !("theme" in savedPrefs) && !("theme" in restored), {savedPrefs, restored});
   check("speedUIRestored", await browser.evaluate(`document.querySelector('button[role="radio"][aria-label="2 倍速"]')?.getAttribute('aria-checked') === 'true'`));
   log("afterReload", {restored, canvas:await canvasState(browser)});
   await shot("14-after-reload.png");
