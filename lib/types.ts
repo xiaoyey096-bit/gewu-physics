@@ -195,6 +195,8 @@ export interface ProjectRecord {
   id: string;
   name: string;
   kind: "auto" | "custom";
+  /** 父文件夹；null 或缺省表示顶层。 */
+  parentId?: string | null;
   order: number;
   createdAt: number;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -70,7 +70,7 @@ export function LibraryPanel({ onOpenSession, showProblem = false, onBackToLibra
   const [dropTarget, setDropTarget] = useState<{ projectId: string; beforeId: string | null } | null>(null);
   const [renaming, setRenaming] = useState<{ kind: "project" | "session"; id: string; value: string } | null>(null);
   const [zoom, setZoom] = useState(false);
-  const [newProject, setNewProject] = useState<string | null>(null);
+  const [newProject, setNewProject] = useState<{ parentId: string | null; value: string } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const visible = useMemo(
@@ -88,6 +88,20 @@ export function LibraryPanel({ onOpenSession, showProblem = false, onBackToLibra
     }
     return map;
   }, [projects, visible]);
+
+  // 无限层级：按 parentId 建树，父级缺失或成环的节点按顶层处理。
+  const tree = useMemo(() => {
+    const ids = new Set(projects.map((p) => p.id));
+    const map = new Map<string | null, ProjectRecord[]>();
+    for (const p of projects) {
+      const parent = p.parentId && p.parentId !== p.id && ids.has(p.parentId) ? p.parentId : null;
+      const list = map.get(parent) ?? [];
+      list.push(p);
+      map.set(parent, list);
+    }
+    for (const list of map.values()) list.sort((a, b) => a.order - b.order);
+    return map;
+  }, [projects]);
 
   const removeSessions = (ids: string[]) => {
     const removed = deleteSessions(ids);
@@ -129,6 +143,80 @@ export function LibraryPanel({ onOpenSession, showProblem = false, onBackToLibra
     if (prefs.librarySort === "manual") return;
     setPrefs({ librarySort: "manual" });
     toast("已切换为手动排序", { description: "拖拽与上移/下移的顺序会被保留。", duration: 2400 });
+  };
+
+  const createFolder = (parentId: string | null, name: string) => {
+    const trimmed = name.trim();
+    setNewProject(null);
+    if (!trimmed) return;
+    createProject(trimmed, parentId);
+    toast.success(parentId ? "子文件夹已创建" : "项目已创建");
+    if (parentId && collapsed.includes(parentId)) {
+      setCollapsed((prev) => prev.filter((id) => id !== parentId));
+    }
+  };
+
+  const renderFolder = (project: ProjectRecord, depth: number): ReactNode => {
+    const children = tree.get(project.id) ?? [];
+    return (
+      <ProjectGroup
+        key={project.id}
+        project={project}
+        depth={depth}
+        items={grouped.get(project.id) ?? []}
+        collapsed={collapsed.includes(project.id)}
+        onToggleCollapse={() =>
+          setCollapsed((prev) =>
+            prev.includes(project.id) ? prev.filter((x) => x !== project.id) : [...prev, project.id],
+          )
+        }
+        subfolder={
+          newProject?.parentId === project.id
+            ? {
+                value: newProject.value,
+                onChange: (value) => setNewProject({ parentId: project.id, value }),
+                onSubmit: () => createFolder(project.id, newProject.value),
+                onCancel: () => setNewProject(null),
+              }
+            : null
+        }
+        onNewSubfolder={() => setNewProject({ parentId: project.id, value: "" })}
+        manage={manage}
+        selected={selected}
+        activeId={activeSession?.id ?? null}
+        dragId={dragId}
+        dropTarget={dropTarget}
+        renaming={renaming}
+        onRename={setRenaming}
+        onCommitRename={commitRename}
+        onOpen={onOpenSession}
+        onToggleSelected={toggleSelected}
+        onDelete={(ids) => removeSessions(ids)}
+        onShift={shift}
+        onDragStart={setDragId}
+        onDragOverTarget={setDropTarget}
+        onDrop={(projectId, beforeId) => {
+          if (dragId) {
+            moveSession(dragId, projectId, beforeId);
+            preferManualSort();
+          }
+          setDragId(null);
+          setDropTarget(null);
+        }}
+        onDragEnd={() => { setDragId(null); setDropTarget(null); }}
+        onDeleteProject={() => {
+          const parent = project.parentId ? projects.find((p) => p.id === project.parentId) : undefined;
+          const fallback = parent ?? projects.find((p) => p.id !== project.id);
+          deleteProject(project.id);
+          toast.success(`项目「${project.name}」已删除`, {
+            description: fallback ? `其中题目已移到「${fallback.name}」` : undefined,
+          });
+        }}
+        canDeleteProject={projects.length > 1}
+      >
+        {children.map((child) => renderFolder(child, depth + 1))}
+      </ProjectGroup>
+    );
   };
 
   // 下拉菜单关闭时会把焦点还给触发按钮，这里把焦点抢回重命名输入框。
@@ -206,7 +294,7 @@ export function LibraryPanel({ onOpenSession, showProblem = false, onBackToLibra
               variant="ghost"
               size="icon-xs"
               aria-label="新建项目"
-              onClick={() => setNewProject("")}
+              onClick={() => setNewProject({ parentId: null, value: "" })}
             >
               <FolderPlus />
             </Button>
@@ -269,87 +357,32 @@ export function LibraryPanel({ onOpenSession, showProblem = false, onBackToLibra
               </SelectContent>
             </Select>
           </div>
-          {newProject !== null && (
+          {newProject?.parentId === null && (
             <div className="flex items-center gap-1.5">
               <Input
                 autoFocus
-                value={newProject}
+                value={newProject.value}
                 placeholder="项目名称"
                 aria-label="新项目名称"
                 className="h-7 text-xs"
-                onChange={(e) => setNewProject(e.target.value)}
+                onChange={(e) => setNewProject({ parentId: null, value: e.target.value })}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    if (newProject.trim()) {
-                      createProject(newProject);
-                      toast.success("项目已创建");
-                    }
-                    setNewProject(null);
-                  }
+                  if (e.key === "Enter") createFolder(null, newProject.value);
                   if (e.key === "Escape") setNewProject(null);
                 }}
               />
-              <Button
-                size="xs"
-                onClick={() => {
-                  if (newProject.trim()) {
-                    createProject(newProject);
-                    toast.success("项目已创建");
-                  }
-                  setNewProject(null);
-                }}
-              >
+              <Button size="xs" onClick={() => createFolder(null, newProject.value)}>
                 创建
+              </Button>
+              <Button variant="ghost" size="icon-xs" aria-label="取消新建项目" onClick={() => setNewProject(null)}>
+                <X />
               </Button>
             </div>
           )}
         </div>
 
         <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-          {projects.map((project) => (
-            <ProjectGroup
-              key={project.id}
-              project={project}
-              items={grouped.get(project.id) ?? []}
-              collapsed={collapsed.includes(project.id)}
-              onToggleCollapse={() =>
-                setCollapsed((prev) =>
-                  prev.includes(project.id) ? prev.filter((x) => x !== project.id) : [...prev, project.id],
-                )
-              }
-              manage={manage}
-              selected={selected}
-              activeId={activeSession?.id ?? null}
-              dragId={dragId}
-              dropTarget={dropTarget}
-              renaming={renaming}
-              onRename={setRenaming}
-              onCommitRename={commitRename}
-              onOpen={onOpenSession}
-              onToggleSelected={toggleSelected}
-              onDelete={(ids) => removeSessions(ids)}
-              onShift={shift}
-              onDragStart={setDragId}
-              onDragOverTarget={setDropTarget}
-              onDrop={(projectId, beforeId) => {
-                if (dragId) {
-                  moveSession(dragId, projectId, beforeId);
-                  preferManualSort();
-                }
-                setDragId(null);
-                setDropTarget(null);
-              }}
-              onDragEnd={() => { setDragId(null); setDropTarget(null); }}
-              onDeleteProject={() => {
-                const target = projects.find((p) => p.id !== project.id);
-                deleteProject(project.id);
-                toast.success(`项目「${project.name}」已删除`, {
-                  description: target ? `其中题目已移到「${target.name}」` : undefined,
-                });
-              }}
-              canDeleteProject={projects.length > 1}
-            />
-          ))}
+          {(tree.get(null) ?? []).map((project) => renderFolder(project, 0))}
           {visible.length === 0 && (
             <p className="px-2 py-6 text-center text-xs text-muted-foreground">
               {sessions.length === 0 ? "题库为空，去入口上传第一道题。" : "没有匹配的题目，换个关键词或筛选条件。"}
@@ -396,9 +429,13 @@ export function LibraryPanel({ onOpenSession, showProblem = false, onBackToLibra
 
 interface GroupProps {
   project: ProjectRecord;
+  depth: number;
   items: SessionRecord[];
   collapsed: boolean;
   onToggleCollapse: () => void;
+  subfolder: { value: string; onChange: (value: string) => void; onSubmit: () => void; onCancel: () => void } | null;
+  onNewSubfolder: () => void;
+  children?: ReactNode;
   manage: boolean;
   selected: string[];
   activeId: string | null;
@@ -420,7 +457,8 @@ interface GroupProps {
 }
 
 function ProjectGroup(props: GroupProps) {
-  const { project, items, collapsed, manage, selected, activeId, dragId, dropTarget, renaming } = props;
+  const { project, depth, items, collapsed, manage, selected, activeId, dragId, dropTarget, renaming } = props;
+  const hasChildren = Array.isArray(props.children) ? props.children.length > 0 : Boolean(props.children);
   // 重命名时阻止 Radix 把焦点还给菜单触发按钮，否则输入框会立刻失焦并提交空改名。
   const keepFocus = useRef(false);
   const onCloseAutoFocus = (event: Event) => {
@@ -429,7 +467,7 @@ function ProjectGroup(props: GroupProps) {
     keepFocus.current = false;
   };
   return (
-    <div className="mb-1">
+    <div className="mb-1" style={depth ? { paddingLeft: depth * 14 } : undefined}>
       <div
         className={cn(
           "group flex items-center gap-1 rounded-md px-1.5 py-1.5",
@@ -494,6 +532,9 @@ function ProjectGroup(props: GroupProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40" onCloseAutoFocus={onCloseAutoFocus}>
+            <DropdownMenuItem onClick={props.onNewSubfolder}>
+              <FolderPlus /> 新建子文件夹
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
                 keepFocus.current = true;
@@ -515,7 +556,31 @@ function ProjectGroup(props: GroupProps) {
       </div>
 
       {!collapsed && (
-        <ul className="ml-2 flex flex-col gap-0.5 border-l border-border pl-1.5">
+        <div style={depth === 0 ? { paddingLeft: 22 } : undefined}>
+          {props.subfolder && (
+            <div className="mb-1 flex items-center gap-1.5 pl-1">
+              <Input
+                autoFocus
+                value={props.subfolder.value}
+                placeholder="子文件夹名称"
+                aria-label="新子文件夹名称"
+                className="h-7 text-xs"
+                onChange={(e) => props.subfolder?.onChange(e.target.value)}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === "Enter") props.subfolder?.onSubmit();
+                  if (e.key === "Escape") props.subfolder?.onCancel();
+                }}
+              />
+              <Button size="xs" onClick={() => props.subfolder?.onSubmit()}>
+                创建
+              </Button>
+              <Button variant="ghost" size="icon-xs" aria-label="取消新建子文件夹" onClick={() => props.subfolder?.onCancel()}>
+                <X />
+              </Button>
+            </div>
+          )}
+          <ul className="ml-2 flex flex-col gap-0.5 border-l border-border pl-1.5">
           {items.map((session) => {
             const result = solveProblem(session.problem);
             const isRenaming = renaming?.kind === "session" && renaming.id === session.id;
@@ -670,12 +735,14 @@ function ProjectGroup(props: GroupProps) {
               </li>
             );
           })}
-          {items.length === 0 && (
+          {items.length === 0 && !hasChildren && (
             <li className="px-2 py-2 text-[11px] text-muted-foreground">
-              空项目 · 拖拽题目到此即可归组
+              空文件夹 · 拖拽题目到此即可归组
             </li>
           )}
-        </ul>
+          </ul>
+          {props.children}
+        </div>
       )}
     </div>
   );

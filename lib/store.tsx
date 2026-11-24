@@ -23,11 +23,13 @@ import {
   type Problem,
 } from "./types";
 import { deriveTitle } from "./text";
+import { EXAMPLES } from "./templates";
 
 const DB_NAME = "gewu-studio";
 const DB_VERSION = 1;
 const PREFS_KEY = "gewu-prefs-v2";
 const FALLBACK_KEY = "gewu-studio-fallback-v2";
+const HS_SEED_KEY = "gewu-seed-hs-v1";
 
 export type StorageMode = "indexeddb" | "local" | "memory";
 
@@ -198,6 +200,58 @@ function seedSnapshot(): Snapshot {
   return { projects, sessions };
 }
 
+/** 把三类 P0 示例题补进用户已有的「高中题库」文件夹；仅执行一次，且按模板+标题去重。 */
+function seedHighSchoolExamples(snapshot: Snapshot): void {
+  const folder = snapshot.projects.find((p) => p.name === "高中题库");
+  if (!folder) return;
+  try {
+    if (localStorage.getItem(HS_SEED_KEY)) return;
+  } catch {
+    /* 读不到标记时按去重逻辑继续 */
+  }
+  const keys = new Set(
+    snapshot.sessions.filter((s) => s.projectId === folder.id).map((s) => `${s.problem.template}:${s.title}`),
+  );
+  const now = Date.now();
+  let order = snapshot.sessions.filter((s) => s.projectId === folder.id).reduce((m, s) => Math.min(m, s.order), 0);
+  const added: SessionRecord[] = [];
+  for (const example of EXAMPLES) {
+    if (example.template === "projectile") continue;
+    const title = deriveTitle(example.statement, example.params, example.template);
+    const key = `${example.template}:${title}`;
+    if (keys.has(key)) continue;
+    keys.add(key);
+    order -= 1;
+    added.push({
+      id: `s-hs-${example.key}`,
+      projectId: folder.id,
+      title,
+      source: "example",
+      createdAt: now,
+      updatedAt: now,
+      order,
+      problem: { version: 1, template: example.template, statement: example.statement, params: example.params, ask: example.ask },
+      baseParams: example.params,
+      questions: example.questions,
+      questionTimes: Object.fromEntries(example.questions.map((question) => [question, now])),
+    });
+  }
+  if (!added.length) {
+    try {
+      localStorage.setItem(HS_SEED_KEY, "1");
+    } catch {
+      /* 忽略 */
+    }
+    return;
+  }
+  snapshot.sessions = [...added, ...snapshot.sessions];
+  try {
+    localStorage.setItem(HS_SEED_KEY, "1");
+  } catch {
+    /* 忽略：本机没写成功时下次按去重逻辑重来 */
+  }
+}
+
 export interface NewSessionInput {
   projectId?: string;
   problem: Problem;
@@ -225,12 +279,62 @@ interface StoreValue {
   deleteSessions: (ids: string[]) => SessionRecord[];
   restoreSessions: (records: SessionRecord[]) => void;
   moveSession: (id: string, projectId: string, beforeId: string | null) => void;
-  createProject: (name: string) => ProjectRecord;
+  createProject: (name: string, parentId?: string | null) => ProjectRecord;
   renameProject: (id: string, name: string) => void;
   deleteProject: (id: string) => void;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
+
+interface Bootstrap {
+  db: IDBDatabase | null;
+  snapshot: Snapshot;
+  mode: StorageMode;
+}
+
+// StrictMode 会挂载两次 effect；共享同一份引导结果，避免第二次读到尚未落盘的旧快照。
+let bootstrapPromise: Promise<Bootstrap> | null = null;
+
+function bootstrap(): Promise<Bootstrap> {
+  if (!bootstrapPromise) {
+    bootstrapPromise = (async (): Promise<Bootstrap> => {
+      const db = await openDatabase();
+      let snapshot: Snapshot | null = null;
+      let nextMode: StorageMode = "memory";
+      if (db) {
+        try {
+          const [p, s] = await Promise.all([
+            idbRequest<ProjectRecord[]>(db, "projects", "readonly", (st) => st.getAll()),
+            idbRequest<SessionRecord[]>(db, "sessions", "readonly", (st) => st.getAll()),
+          ]);
+          snapshot = { projects: p ?? [], sessions: s ?? [] };
+          nextMode = "indexeddb";
+        } catch {
+          snapshot = null;
+        }
+      }
+      if (!snapshot || !snapshot.projects.length) {
+        const fallback = readFallback();
+        if (fallback && fallback.projects.length) {
+          snapshot = fallback;
+          nextMode = db ? "indexeddb" : "local";
+        }
+      }
+      if (!snapshot || !snapshot.projects.length) {
+        snapshot = seedSnapshot();
+        nextMode = db ? "indexeddb" : writeFallback(snapshot) ? "local" : "memory";
+      }
+      seedHighSchoolExamples(snapshot);
+      const knownProjects = new Set(snapshot.projects.map((p) => p.id));
+      snapshot.projects = snapshot.projects.map((p) => ({
+        ...p,
+        parentId: p.parentId && p.parentId !== p.id && knownProjects.has(p.parentId) ? p.parentId : null,
+      }));
+      return { db, snapshot, mode: nextMode };
+    })();
+  }
+  return bootstrapPromise;
+}
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -321,33 +425,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let alive = true;
-    (async () => {
-      const db = await openDatabase();
-      let snapshot: Snapshot | null = null;
-      let nextMode: StorageMode = "memory";
-      if (db) {
-        try {
-          const [p, s] = await Promise.all([
-            idbRequest<ProjectRecord[]>(db, "projects", "readonly", (st) => st.getAll()),
-            idbRequest<SessionRecord[]>(db, "sessions", "readonly", (st) => st.getAll()),
-          ]);
-          snapshot = { projects: p ?? [], sessions: s ?? [] };
-          nextMode = "indexeddb";
-        } catch {
-          snapshot = null;
-        }
-      }
-      if (!snapshot || !snapshot.projects.length) {
-        const fallback = readFallback();
-        if (fallback && fallback.projects.length) {
-          snapshot = fallback;
-          nextMode = db ? "indexeddb" : "local";
-        }
-      }
-      if (!snapshot || !snapshot.projects.length) {
-        snapshot = seedSnapshot();
-        nextMode = db ? "indexeddb" : writeFallback(snapshot) ? "local" : "memory";
-      }
+    void (async () => {
+      const { db, snapshot, mode: nextMode } = await bootstrap();
       if (!alive) return;
       dbRef.current = db;
       modeRef.current = nextMode;
@@ -494,13 +573,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const createProject = useCallback(
-    (name: string): ProjectRecord => {
+    (name: string, parentId: string | null = null): ProjectRecord => {
       const trimmed = name.trim() || "未命名项目";
-      const maxOrder = projectsRef.current.reduce((m, p) => Math.max(m, p.order), -1);
+      const parent = parentId ? projectsRef.current.find((p) => p.id === parentId) : null;
+      const siblings = projectsRef.current.filter((p) => (p.parentId ?? null) === (parent?.id ?? null));
+      const maxOrder = siblings.reduce((m, p) => Math.max(m, p.order), -1);
       const record: ProjectRecord = {
         id: uid("p"),
         name: trimmed.slice(0, 24),
         kind: "custom",
+        parentId: parent?.id ?? null,
         order: maxOrder + 1,
         createdAt: Date.now(),
       };
@@ -527,13 +609,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const deleteProject = useCallback(
     (id: string) => {
-      const remaining = projectsRef.current.filter((p) => p.id !== id);
+      const projects = projectsRef.current;
+      const target = projects.find((p) => p.id === id);
+      if (!target) return;
+      const remaining = projects.filter((p) => p.id !== id);
       if (!remaining.length) return;
-      const fallbackProject = remaining[0];
+      const parent = target.parentId ? remaining.find((p) => p.id === target.parentId) : undefined;
+      const reparented = remaining
+        .filter((p) => p.parentId === id)
+        .map((p) => ({ ...p, parentId: parent?.id ?? null }));
+      const children = remaining.map((p) => (p.parentId === id ? { ...p, parentId: parent?.id ?? null } : p));
+      const subtree = new Set([id]);
+      for (let grew = true; grew; ) {
+        grew = false;
+        for (const p of projects) {
+          if (p.parentId && subtree.has(p.parentId) && !subtree.has(p.id)) {
+            subtree.add(p.id);
+            grew = true;
+          }
+        }
+      }
+      const fallbackProject = parent ?? remaining.find((p) => !(p.parentId ?? null)) ?? remaining[0];
       const moved = sessionsRef.current
-        .filter((s) => s.projectId === id)
+        .filter((s) => subtree.has(s.projectId))
         .map((s) => ({ ...s, projectId: fallbackProject.id }));
-      commitProjects(remaining, [], [id]);
+      commitProjects(children, reparented, [id]);
       if (moved.length) {
         const map = new Map(moved.map((s) => [s.id, s]));
         commitSessions(
