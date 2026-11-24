@@ -1,4 +1,4 @@
-import type { Problem, ProblemParams, ProjectileParams, SolveResult } from "./types";
+import type { BodyTrack, ForcePhase, ForceVector, Problem, ProblemParams, ProjectileParams, SolveResult } from "./types";
 import { sampleAt } from "./physics";
 
 export function motionObject(problem: Problem) {
@@ -18,16 +18,72 @@ export function stateOf(result: SolveResult, time: number) {
   return sampleAt(result.series, time);
 }
 
+/** 某时刻所处的受力阶段，以及相对上一阶段新出现 / 消失的力。 */
+export function forceStateOf(result: SolveResult, time: number) {
+  const phases = result.forcePhases ?? [];
+  if (!phases.length) return { phase: null as ForcePhase | null, newForces: [] as ForceVector[], goneForces: [] as ForceVector[], forces: [] as ForceVector[] };
+  let index = phases.findIndex((p) => time >= p.from - 1e-6 && time < p.to - 1e-6);
+  if (index < 0) index = time < 0 ? 0 : phases.length - 1;
+  const phase = phases[index];
+  const previous = phases[index - 1];
+  const present = new Set(phase.forces.map((f) => f.id));
+  return {
+    phase,
+    forces: phase.forces,
+    newForces: phase.forces.filter((f) => phase.added.includes(f.id)),
+    goneForces: previous ? previous.forces.filter((f) => !present.has(f.id)) : [],
+  };
+}
+
+/** 画布与面板共用的力标签：力符号（该物体的速度符号 此刻速度）。 */
+export function forceLabel(force: ForceVector, result: SolveResult, time: number): string {
+  const body = result.bodies.find((item) => item.id === force.body);
+  if (!body) return force.symbol;
+  const s = sampleAt(body.series, time);
+  const v = Math.abs(s.vy) < 1e-6 ? s.vx : Math.hypot(s.vx, s.vy);
+  const value = Math.abs(v) < 1e-9 ? "0" : `${Number(v.toFixed(Math.abs(v) >= 10 ? 1 : 2))}`;
+  return `${force.symbol}（${body.velocitySymbol} ${value}）`;
+}
+
+/**
+ * 临界状态点：每个受力新出现的时刻、每个事件时刻都是临界点。
+ */
 export function criticalStates(problem: Problem, result: SolveResult) {
-  // 抛体保留解析解取值，避免时间序列插值放大能量误差。
+  const raw: { id: string; title: string; time: number; condition: string }[] = [];
   if (problem.template === "projectile" && result.template === "projectile") {
-    const params = problem.params as ProjectileParams;
-    return projectilePoints(problem, result).map((point) => ({ ...point, ...stateAt(params, point.time) }));
+    raw.push(...projectilePoints(problem, result));
+  } else {
+    raw.push(...result.events.map((event) => ({ id: event.id, title: event.title, time: event.time, condition: event.condition })));
   }
-  const points = result.events
-    .filter((event, index, list) => list.findIndex((e) => Math.abs(e.time - event.time) < 1e-9) === index)
-    .map((event) => ({ id: event.id, title: event.title, time: event.time, condition: event.condition }));
-  return points.map(point => ({ ...point, ...sampleAt(result.series, point.time) }));
+  (result.forcePhases ?? []).forEach((phase) => {
+    if (raw.some((point) => Math.abs(point.time - phase.from) < 1e-6)) return;
+    raw.push({ id: `force-${phase.id}`, title: phase.title, time: phase.from, condition: phase.condition });
+  });
+  const seen = new Set<number>();
+  // 抛体保留解析解取值，避免时间序列插值放大能量误差。
+  const stateOfPoint = (time: number) => problem.template === "projectile" && result.template === "projectile"
+    ? stateAt(problem.params as ProjectileParams, time)
+    : sampleAt(result.series, time);
+  return raw
+    .filter((point) => {
+      const key = Math.round(point.time * 1000);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => a.time - b.time)
+    .map((point) => {
+      const forces = forceStateOf(result, point.time);
+      // 「新出现 / 消失」只属于受力阶段真正开始的时刻；同一阶段内的事件点（最高点、落地前）不重复标注。
+      const atBoundary = !!forces.phase && Math.abs(forces.phase.from - point.time) < 5e-3;
+      return {
+        ...point,
+        ...forces,
+        newForces: atBoundary ? forces.newForces : [],
+        goneForces: atBoundary ? forces.goneForces : [],
+        ...stateOfPoint(point.time),
+      };
+    });
 }
 
 function projectilePoints(problem: Problem, result: SolveResult) {
@@ -46,13 +102,14 @@ export type CriticalState = ReturnType<typeof criticalStates>[number];
 export function sceneTransform(width: number, height: number, result: SolveResult) {
   const { xMin, yMin } = result.bounds;
   const worldW = Math.max(result.bounds.xMax - xMin, result.template === "projectile" ? 4 : 1.2);
-  const worldH = Math.max(result.bounds.yMax - yMin, 2.5);
+  // 抛体的抛出点/最高点常贴着绘图区顶部，多留两成抬头空间，HUD 与最高点标注才不会压在物体上。
+  const worldH = Math.max(result.bounds.yMax - yMin, 2.5) * (result.template === "projectile" ? 1.2 : 1);
   const padBottom = width < 560 ? 76 : 58;
   const availW = width - 48 - 26, availH = height - 34 - padBottom;
   const scale = Math.min(availW / worldW, availH / worldH);
   const ox = 48 + Math.max(0, (availW - worldW * scale) / 2), oy = height - padBottom;
   return {
-    worldW, worldH, availW, availH, scale, ox, oy, xMin, yMin,
+    worldW, worldH, availW, availH, scale, ox, oy, xMin, yMin, width, height,
     X: (x: number) => ox + (x - xMin) * scale,
     Y: (y: number) => oy - (y - yMin) * scale,
   };

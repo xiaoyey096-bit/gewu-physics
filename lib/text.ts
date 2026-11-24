@@ -113,16 +113,33 @@ function parseIncline(text: string, found: string[], assumed: string[]): Incline
   return { m, angleDeg, mu, L, g, v0 };
 }
 
+/** 题面里的两个摩擦因数：靠上下区分块板间 μ 与板地间 μ′。 */
+function frictionOf(text: string): { mu: number | null; muGround: number | null } {
+  let mu: number | null = null, muGround: number | null = null;
+  for (const match of text.matchAll(/(?:μ|摩擦因数)([′'\u2032]?)\s*[^0-9\n]{0,6}(0?\.\d+|\d+(?:\.\d+)?)/g)) {
+    const start = Math.max(0, (match.index ?? 0) - 16);
+    const head = text.slice(start, match.index ?? 0);
+    const value = Number(match[2]);
+    if (/地面|板与地/.test(head) || match[1]) {
+      if (muGround === null) muGround = value;
+    } else if (mu === null) mu = value;
+  }
+  return { mu, muGround };
+}
+
 function parseBlockBoard(text: string, found: string[], assumed: string[]): BlockBoardParams {
   const g = gOf(text);
   const m = num(/(?:滑块|小滑块|物块)[^0-9]{0,6}(\d+(?:\.\d+)?)\s*(?:kg|千克)/, text) ?? 1;
   const M = num(/(?:木板|板)[^0-9]{0,6}(\d+(?:\.\d+)?)\s*(?:kg|千克)/, text) ?? 2;
   const L = num(/(?:板长|木板.*?长|长度)[^0-9]{0,6}(\d+(?:\.\d+)?)\s*(?:m|米)/, text) ?? 7;
   const v0 = num(/(?:以|初速度|速度)[^0-9]{0,6}(\d+(?:\.\d+)?)\s*(?:m\/s|米\/秒)/, text) ?? 6;
-  const mu = num(/(?:μ|摩擦因数|动摩擦因数)[^0-9]{0,6}(0?\.\d+|\d+(?:\.\d+)?)/i, text) ?? 0.2;
+  const friction = frictionOf(text);
+  const mu = friction.mu ?? 0.2;
+  const muGround = friction.muGround ?? 0;
   assumed.push(`滑块质量 m 暂按 ${m} kg`, `木板质量 M 暂按 ${M} kg`, `板长 L 暂按 ${L} m`, `v₀ 暂按 ${v0} m/s`, `g 暂按 ${g} m/s²`);
-  found.push(`动摩擦因数 μ = ${mu}`);
-  return { m, M, L, v0, mu, g };
+  if (friction.muGround === null) assumed.push("地面摩擦 μ′ 暂按 0（光滑地面）");
+  found.push(`滑块与木板 μ = ${mu}`, `木板与地面 μ′ = ${muGround}`);
+  return { m, M, L, v0, mu, muGround, g };
 }
 
 function parseCollision(text: string, found: string[], assumed: string[]): CollisionParams {

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
-export const BASE = process.env.BASE || "http://127.0.0.1:5174";
+export const BASE = process.env.BASE || "http://127.0.0.1:5173";
 export const LEFT = 'aside[aria-label="题库与当前题目"]';
 export const RIGHT = 'aside[aria-label="动画参数与对话"]';
 export const ROW = 'button[aria-label^="题目 "][aria-label$=" 的操作"]';

@@ -20,7 +20,7 @@ JSON 结构：
 题型与参数（全部换算为国际单位）：
 - projectile（抛体/平抛/斜抛/竖直上抛）：params = { "v0": m/s, "angleDeg": 度（平抛 0，竖直上抛 90）, "h0": m, "g": 默认 9.8 }；ask 取 ["range","maxHeight","flightTime","apexTime","landingSpeed"] 的子集。
 - incline（物块沿斜面下滑/上滑，含摩擦）：params = { "m": kg, "angleDeg": 倾角, "mu": 动摩擦因数, "L": 斜面长度 m, "g": 默认 10, "v0": 沿斜面向下的初速度 m/s（由静止为 0）}；ask 取 ["acceleration","time","speed","heat","workG"] 的子集。
-- blockBoard（滑块滑上木板、相对滑动/共速/滑离）：params = { "m": 滑块 kg, "M": 木板 kg, "L": 木板长度 m, "v0": 滑块初速度 m/s, "mu": 滑块与木板间动摩擦因数, "g": 默认 10 }；ask 取 ["time","speed","slip","heat"] 的子集。
+- blockBoard（滑块滑上木板、相对滑动/共速/滑离）：params = { "m": 滑块 kg, "M": 木板 kg, "L": 木板长度 m, "v0": 滑块初速度 m/s, "mu": 滑块与木板间动摩擦因数, "muGround": 木板与地面间动摩擦因数（题干说地面光滑或未提及就填 0）, "g": 默认 10 }；ask 取 ["time","speed","slip","heat"] 的子集。
 - collision1d（一维正碰/弹性碰撞/完全非弹性碰撞）：params = { "m1": kg, "m2": kg, "v1": m/s, "v2": m/s, "e": 恢复系数（完全弹性 1，完全非弹性 0，一般 0~1）}；ask 取 ["v1After","v2After","loss","momentum"] 的子集。
 规则：
 - 只能使用上面四种 template 之一；优先选择与题干情境最匹配的模型。

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { BookOpen, ChevronRight, MessageSquare, Plus, SlidersHorizontal } from "lucide-react";
+import { BookOpen, ChevronRight, Crosshair, MessageSquare, Plus, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -51,8 +51,7 @@ export function StudyLayout({ configured, onNewProblem, onHome, onOpenSession, t
     <div className="flex h-full min-h-0 flex-col">
       <div className="p-4 pb-1"><Button variant="outline" className="w-full justify-start gap-2 rounded-xl" onClick={() => { setLeftDrawer(false); onNewProblem(); }}><Plus /> 新建题目会话</Button></div>
       <div className="min-h-0 flex-1"><LibraryPanel showProblem={!composing && showProblem} onBackToLibrary={onBackToLibrary} onOpenSession={(id, detail) => { if (!detail) setLeftDrawer(false); onOpenSession(id, detail); }} /></div>
-      {criticalPoints}
-      {!showProblem && !criticalPoints && <p className="border-t border-border px-4 py-3 text-[10px] leading-5 text-muted-foreground">按章节建立项目，收藏每一次思考。<br />题库保存在当前浏览器。</p>}
+      {!showProblem && <p className="border-t border-border px-4 py-3 text-[10px] leading-5 text-muted-foreground">按章节建立项目，收藏每一次思考。<br />题库保存在当前浏览器。</p>}
     </div>
   );
   const controls = parameters ?? (
@@ -65,12 +64,17 @@ export function StudyLayout({ configured, onNewProblem, onHome, onOpenSession, t
     </div>
   );
   const rightPanel = (
-    <Tabs value={prefs.rightTab} onValueChange={(value) => setPrefs({ rightTab: value === "chat" ? "chat" : "parameters" })} className="h-full min-h-0 gap-0">
+    <Tabs value={prefs.rightTab} onValueChange={(value) => setPrefs({ rightTab: value === "chat" || value === "states" ? value : "parameters" })} className="h-full min-h-0 gap-0">
       <div className="shrink-0 border-b border-border p-3">
-        <TabsList className="w-full" aria-label="右侧面板"><TabsTrigger value="parameters"><SlidersHorizontal />动画参数</TabsTrigger><TabsTrigger value="chat"><MessageSquare />对话</TabsTrigger></TabsList>
+        <TabsList className="w-full" aria-label="右侧面板">
+          <TabsTrigger value="parameters"><SlidersHorizontal />动画参数</TabsTrigger>
+          <TabsTrigger value="chat"><MessageSquare />对话</TabsTrigger>
+          <TabsTrigger value="states"><Crosshair />对象与受力</TabsTrigger>
+        </TabsList>
       </div>
       <TabsContent value="parameters" forceMount className="min-h-0 overflow-y-auto data-[state=inactive]:hidden">{controls}</TabsContent>
       <TabsContent value="chat" forceMount className="min-h-0 overflow-hidden data-[state=inactive]:hidden">{conversation ?? <p className="p-5 text-xs leading-7 text-muted-foreground">打开或新建一道题目后，可以在这里提问、复制内容和编辑题目。</p>}</TabsContent>
+      <TabsContent value="states" forceMount className="min-h-0 overflow-y-auto data-[state=inactive]:hidden">{criticalPoints ?? <p className="p-5 text-xs leading-7 text-muted-foreground">打开一道题目后，这里列出每个临界状态点的受力与速度。</p>}</TabsContent>
     </Tabs>
   );
 
@@ -112,7 +116,7 @@ export function StudyLayout({ configured, onNewProblem, onHome, onOpenSession, t
           <aside className="min-h-0 shrink-0 bg-card" style={{ width: bp.desktop ? `min(${prefs.leftWidth}px, 24vw)` : Math.min(prefs.leftWidth, 280) }} aria-label="题库与当前题目">{library}</aside>
           <PaneResizer side="left" width={prefs.leftWidth} min={240} max={360} onWidth={(leftWidth) => setPrefs({ leftWidth })} />
         </>}
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain" aria-label="题目学习会话">
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain scrollbar-none" aria-label="题目学习会话">
           <div className="mx-auto flex w-full max-w-[1040px] flex-col gap-5 px-4 py-6 lg:px-7">{children}</div>
         </main>
         {bp.desktop && prefs.rightOpen && <>

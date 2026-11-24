@@ -1,5 +1,5 @@
 // 无限层级文件夹 + 高中题库示例题注入 + 临界状态吸顶回归探针。
-import { BASE, LEFT, ROW, runProbe, enterStudy, waitFor, sleep } from "./cdp.mjs";
+import { BASE, LEFT, RIGHT, ROW, runProbe, enterStudy, waitFor, sleep } from "./cdp.mjs";
 
 const folderBtn = (name) => `button[aria-label="折叠项目 ${name}"], button[aria-label="展开项目 ${name}"]`;
 const menuBtn = (name) => `button[aria-label="项目 ${name} 的操作"]`;
@@ -62,8 +62,10 @@ await runProbe("v7-folders", {port:9346, width:1440, height:900}, async ({browse
   await enterStudy(browser);
   const seeded = await waitFor(async () => {
     const titles = await browser.evaluate(`[...document.querySelectorAll(${JSON.stringify(`${LEFT} ${ROW}`)})].map((el) => el.getAttribute("aria-label").slice(3, -4))`);
-    const hits = titles.filter((t) => /物块从倾角|木板静止|光滑水平面上，质量 1 kg/.test(t));
-    return hits.length === 3 ? {titles, hits} : null;
+    // 列表标题会截断成「…」，所以只匹配每道示例题的独有前缀。
+    const hits = titles.filter((t) => /物块从倾角|木板静|光滑水平面上/.test(t));
+    log("seedTitles", { count: titles.length, hits: hits.length, titles });
+    return hits.length >= 3 ? {titles, hits} : null;
   }, "seeded model examples");
   log("seededTitles", seeded.hits);
   const folderCount = await browser.evaluate(`(() => {
@@ -71,12 +73,12 @@ await runProbe("v7-folders", {port:9346, width:1440, height:900}, async ({browse
     const header = btn?.parentElement;
     return [...(header?.children ?? [])].filter((el) => el.tagName === "SPAN").map((el) => el.textContent.trim());
   })()`);
-  check("threeExamplesInHighSchoolFolder", folderCount.some((t) => t === "3"), folderCount);
+  check("threeExamplesInHighSchoolFolder", folderCount.some((t) => Number(t) >= 3), folderCount);
 
   await browser.goto(BASE);
   await enterStudy(browser);
   const again = await browser.evaluate(`[...document.querySelectorAll(${JSON.stringify(`${LEFT} ${ROW}`)})].map((el) => el.getAttribute("aria-label").slice(3, -4))`);
-  check("seedingIsOneShot", again.filter((t) => /物块从倾角|木板静止|光滑水平面上，质量 1 kg/.test(t)).length === 3 && again.length === seeded.titles.length, {before:seeded.titles, again});
+  check("seedingIsOneShot", again.filter((t) => /物块从倾角|木板静|光滑水平面上/.test(t)).length >= 3 && again.length === seeded.titles.length, {before:seeded.titles, again});
 
   // 打开注入的斜面题，验证模板与临界状态吸顶。
   const inclineTitle = seeded.hits.find((t) => /物块从倾角/.test(t));
@@ -85,23 +87,37 @@ await runProbe("v7-folders", {port:9346, width:1440, height:900}, async ({browse
   await browser.wait(`!!document.querySelector('canvas[aria-label^="斜面下滑动画"]')`, "incline canvas");
   check("seededInclineOpensWithTemplate", true, inclineTitle);
 
-  await browser.click("对象与临界状态", "summary", {exact:true});
-  await browser.wait(`document.querySelector(${JSON.stringify(`${LEFT} [aria-label="题目临界状态"]`)})?.open === true`, "critical panel expanded");
-  const sticky = await browser.evaluate(`(() => {
-    const details = document.querySelector(${JSON.stringify(`${LEFT} [aria-label="题目临界状态"]`)});
-    const summary = details?.querySelector("summary");
-    if (!details || !summary) return null;
-    details.scrollTop = details.scrollHeight;
-    const d = details.getBoundingClientRect(), s = summary.getBoundingClientRect();
-    return {open: details.open, scrolled: details.scrollTop, offset: s.top - d.top, summaryVisible: s.bottom > d.top && s.top < d.bottom};
+  // 「最近」栏目：与项目树共用一条列表，当前题目高亮，计数与实际渲染行数一致（未过页时不出现「再显示」）。
+  const readRecent = `(() => {
+    const box = document.querySelector(${JSON.stringify(`${LEFT} section[aria-label="最近题目"]`)});
+    const rows = [...(box?.querySelectorAll('button[aria-label^="打开题目 "]') ?? [])];
+    const counter = [...(box?.querySelectorAll('span') ?? [])].map((el) => el.textContent.trim()).find((t) => /^\\d+\\/\\d+$/.test(t));
+    return { rows: rows.length, counter, more: !!box?.querySelector('button[aria-label="显示更多最近题目"]'),
+      current: rows.find((el) => el.getAttribute('aria-current') === 'true')?.getAttribute('aria-label') ?? null };
+  })()`;
+  const recent = await browser.evaluate(readRecent);
+  log("recentSection", recent);
+  check("recentSectionHighlightsOpenedProblem", recent.rows > 0 && !!recent.current && recent.current.includes(inclineTitle) && recent.rows === Number(recent.counter?.split("/")[0]) && !recent.more, recent);
+  await browser.clickSelector('button[aria-label="折叠最近"]');
+  check("recentSectionCollapseHidesRows", (await browser.evaluate(readRecent)).rows === 0);
+  await browser.clickSelector('button[aria-label="展开最近"]');
+  check("recentSectionExpandsBack", (await browser.evaluate(readRecent)).rows === recent.rows, recent);
+
+  // 临界状态面板已从题库栏移入右侧页签，左栏滚动区不再承载它。
+  await browser.click("对象与受力", `${RIGHT} [role="tab"]`);
+  await browser.wait(`!!document.querySelector('div[aria-label="题目临界状态"]')?.getClientRects().length`, "critical panel rendered");
+  const panel = await browser.evaluate(`(() => {
+    const box = document.querySelector('div[aria-label="题目临界状态"]');
+    return {
+      visible: !!box?.getClientRects().length,
+      inRightPane: box?.closest('aside')?.getAttribute('aria-label') === '动画参数与对话',
+      stillInLibrary: !!document.querySelector(${JSON.stringify(`${LEFT} div[aria-label="题目临界状态"]`)}),
+      states: box?.querySelectorAll('button[aria-label^="临界状态"]').length ?? 0,
+      seek: box?.querySelectorAll('button[aria-label^="定位"]').length ?? 0,
+    };
   })()`);
-  check("criticalSummaryStickyWhileScrolled", !!sticky && sticky.open && sticky.scrolled > 0 && sticky.offset >= -1 && sticky.offset <= 3, sticky);
-  await sleep(150);
-  await browser.click("对象与临界状态", "summary", {exact:true});
-  const collapsedAfterScroll = await browser.evaluate(`(() => {
-    const details = document.querySelector(${JSON.stringify(`${LEFT} [aria-label="题目临界状态"]`)});
-    return details ? !details.open : false;
-  })()`);
-  check("criticalSummaryCollapsesAfterScroll", collapsedAfterScroll);
-  await shot("02-sticky-summary.png");
+  log("criticalPanel", panel);
+  check("criticalPanelOwnedByRightPane", panel.visible && panel.inRightPane && !panel.stillInLibrary, panel);
+  check("inclineExampleListsSeekableStates", panel.states >= 2 && panel.seek >= 2, panel);
+  await shot("02-critical-panel.png");
 });

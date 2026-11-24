@@ -174,7 +174,8 @@ await runProbe("v4-export", { port: 9362, width: 1600, height: 1000 }, async ({ 
     const current = await png("current", () => browser.click("导出 PNG", '[aria-label="动画控制区"] button', { exact: true }), "baseline", baseline.time);
     check("current PNG dimensions match stage", current.width === baseline.width && current.height === baseline.height, current);
     await stable("current PNG", baseline);
-    await browser.clickSelector('details[aria-label="题目临界状态"] > summary');
+    await browser.click("对象与受力", `${RIGHT} [role="tab"]`);
+    await browser.wait(`!!document.querySelector('div[aria-label="题目临界状态"]')?.getClientRects().length`, "临界状态面板出现");
     const critical = [];
     for (const point of baseline.points) {
       const image = await png(point.id, () => browser.clickSelector(`button[aria-label=${JSON.stringify(`导出${point.title} PNG`)}]`), "baseline", point.time);
@@ -191,6 +192,9 @@ await runProbe("v4-export", { port: 9362, width: 1600, height: 1000 }, async ({ 
     }
     check("contact sheet cells have distinct states", new Set(cells).size === 4, cells); await stable("contact sheet", baseline);
     await shot("01-png-exports.png");
+    // 临界导出用完了「对象与受力」页签，后面的改参数步骤要回到「动画参数」。
+    await browser.click("动画参数", `${RIGHT} [role="tab"]`);
+    await browser.wait(`!!document.querySelector('input[aria-label=${JSON.stringify(fields.v0)}]')?.getClientRects().length`, "参数页签恢复可见");
 
     await openVideo();
     check("export rate defaults to live speed", await ev(`document.querySelector('select[aria-label="视频倍速"]').value === '0.5'`));

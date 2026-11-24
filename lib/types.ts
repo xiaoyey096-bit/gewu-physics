@@ -21,13 +21,14 @@ export interface InclineParams {
   v0: number;
 }
 
-/** 滑块-木板：滑块 m 以 v0 滑上静止木板 M，板长 L，板与滑块间动摩擦因数 mu。 */
+/** 滑块-木板：滑块 m 以 v0 滑上静止木板 M，板长 L，板与滑块间动摩擦因数 mu，木板与地面间动摩擦因数 muGround（0 表示光滑地面）。 */
 export interface BlockBoardParams {
   m: number;
   M: number;
   L: number;
   v0: number;
   mu: number;
+  muGround: number;
   g: number;
 }
 
@@ -75,6 +76,38 @@ export interface BodyTrack {
   /** 渲染尺寸（m）：宽、高。 */
   w: number;
   h: number;
+  /** 速度符号，用于力标签括号，如 v、v₁、v₂。 */
+  velocitySymbol: string;
+}
+
+/** 一个力矢量：方向为世界坐标单位向量，大小为牛顿。 */
+export interface ForceVector {
+  /** 跨阶段稳定 id，用于判断“新出现的力”。 */
+  id: string;
+  /** 箭头标签：G、N、f、F 等。 */
+  symbol: string;
+  /** 中文名：重力、支持力、滑动摩擦力…… */
+  name: string;
+  /** 受力物体 id。 */
+  body: string;
+  dx: number;
+  dy: number;
+  /** 力的大小（N）。 */
+  magnitude: number;
+  /** 计算式，如 “μmg = 4 N”。 */
+  formula: string;
+}
+
+/** 受力阶段：[from, to) 内各物体的受力情况。 */
+export interface ForcePhase {
+  id: string;
+  title: string;
+  from: number;
+  to: number;
+  condition: string;
+  /** 相对上一阶段新出现（或性质改变）的力 id，渲染时用鲜艳色标注。 */
+  added: string[];
+  forces: ForceVector[];
 }
 
 export interface SceneEvent {
@@ -106,6 +139,8 @@ export interface SolveResultBase {
   /** 参与动画的物体；第一个为主对象，与 series 相同。 */
   bodies: BodyTrack[];
   events: SceneEvent[];
+  /** 按时间划分的受力阶段，临界状态即阶段边界。 */
+  forcePhases: ForcePhase[];
   scalars: ScalarTile[];
   steps: SolutionStep[];
   /** 主对象的时间序列（抛体即原 series）。 */
@@ -227,6 +262,8 @@ export interface SessionRecord {
 export interface StageOptions {
   grid: boolean;
   vectors: boolean;
+  /** 受力箭头：按当前受力阶段绘制，新出现的力用鲜艳色。 */
+  forces: boolean;
   trail: boolean;
   markers: boolean;
   strobe: boolean;
@@ -235,7 +272,7 @@ export interface StageOptions {
 }
 
 export type ThemeMode = "system" | "light" | "dark";
-export type RightTab = "parameters" | "chat";
+export type RightTab = "parameters" | "chat" | "states";
 export type LibrarySort = "updated" | "created" | "title" | "manual";
 export type LibraryFilter = "all" | "photo" | "text" | "example";
 
@@ -296,6 +333,7 @@ export interface StageApi {
 export const DEFAULT_STAGE: StageOptions = {
   grid: true,
   vectors: true,
+  forces: true,
   trail: true,
   markers: true,
   strobe: false,

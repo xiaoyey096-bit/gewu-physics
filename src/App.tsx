@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -23,7 +22,7 @@ export default function App() {
 }
 
 function Shell() {
-  const { ready, sessions, activeSession, setActive, prefs, setPrefs } = useStore();
+  const { ready, sessions, activeSession, setActive, prefs } = useStore();
   const bp = useBreakpoint();
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [view, setView] = useState<"landing" | "intake" | "workspace">("landing");
@@ -75,18 +74,6 @@ function Shell() {
     setView("workspace");
   }, [setActive]);
 
-  const openLibrary = useCallback(() => {
-    const target = activeSession ?? sessions[0];
-    if (!target) {
-      toast("题库还是空的", { description: "先上传照片或输入一道题，就会自动归入项目。", duration: 2600 });
-      return;
-    }
-    setActive(target.id);
-    setShowProblem(false);
-    setPrefs({ leftOpen: true });
-    setView("workspace");
-  }, [activeSession, sessions, setActive, setPrefs]);
-
   const theme = prefs.theme === "system" ? "system" : prefs.theme;
 
   return (
@@ -108,7 +95,7 @@ function Shell() {
         <Workspace key={activeSession.id} configured={configured} onNewProblem={newProblem} onHome={() => setView("landing")} onOpenSession={openSession} showProblem={showProblem} onBackToLibrary={() => setShowProblem(false)} />
       ) : (
         <StudyLayout configured={configured} title="新建题目会话" composing onHome={() => setView("landing")} onNewProblem={newProblem} onOpenSession={openSession}>
-          <IntakeScreen key={draftKey} configured={configured} onCreated={openSession} onOpenSession={openSession} onOpenLibrary={openLibrary} />
+          <IntakeScreen key={draftKey} configured={configured} onCreated={openSession} />
         </StudyLayout>
       )}
       <Toaster

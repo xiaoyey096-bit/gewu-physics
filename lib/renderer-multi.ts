@@ -5,11 +5,106 @@ import type { BlockBoardParams, CollisionParams, InclineParams, Problem, SolveRe
 import type { Palette } from "./renderer";
 import { DEFAULT_STAGE } from "./types";
 import { sampleAt } from "./physics";
-import { sceneTransform } from "./motion";
+import { forceLabel, forceStateOf, sceneTransform } from "./motion";
 
 type SceneView = ReturnType<typeof sceneTransform>;
 
 const PAD = { left: 48, right: 26, top: 34, bottom: 58 };
+
+/** 物体在画布上的竖直半径：抛体小球与方块都按 7 px 绘制，台面/地面据此对齐「放在表面上」。 */
+export const OBJECT_R = 7;
+
+export type Box = { l: number; r: number; t: number; b: number };
+
+function textBox(x: number, y: number, w: number, align: CanvasTextAlign): Box {
+  const l = align === "left" ? x : align === "right" ? x - w : x - w / 2;
+  return { l, r: l + w, t: y - 8, b: y + 3 };
+}
+
+const overlapArea = (a: Box, b: Box) => Math.max(0, Math.min(a.r, b.r) - Math.max(a.l, b.l)) * Math.max(0, Math.min(a.b, b.b) - Math.max(a.t, b.t));
+
+/** 同一个作用点会引出多支箭头，标签先按箭头方向排，挤不下再沿箭头外移或侧移。 */
+const LABEL_SPOTS: [number, number][] = [[0, 0], [11, 0], [0, -12], [0, 12], [22, 0], [11, -12], [11, 12], [22, -12], [22, 12], [0, -24], [0, 24], [33, 0], [11, -24], [11, 24]];
+
+/**
+ * 按当前受力阶段绘制受力箭头：常规力用墨色，阶段内新出现的力用鲜艳色。
+ * 标签与右侧「对象与临界状态」同源，直接复用 forceLabel。
+ */
+export function drawForces(
+  ctx: CanvasRenderingContext2D,
+  view: SceneView,
+  palette: Palette,
+  result: SolveResult,
+  time: number,
+  anchors: Record<string, { x: number; y: number }>,
+  obstacles: Box[] = [],
+): void {
+  const { phase } = forceStateOf(result, time);
+  if (!phase || !phase.forces.length) return;
+  const target = Math.min(58, Math.max(30, view.scale * 0.62));
+  const sizes = phase.forces.map((f) => f.magnitude).filter((m) => m > 0);
+  const ref = sizes.length ? Math.max(...sizes) : 1;
+  const limit = { l: 6, r: view.width - 6, t: PAD.top - 16, b: Math.min(view.height - 6, view.oy + 44) };
+  const placed: Box[] = obstacles.slice();
+  ctx.save();
+  ctx.font = "10px ui-monospace, monospace";
+  ctx.lineWidth = 2.2;
+  for (const f of phase.forces) {
+    const at = anchors[f.body];
+    if (!at || !result.bodies.some((item) => item.id === f.body)) continue;
+    // 鲜艳色只标「刚出现」的那一小段窗口，阶段播过去之后回落墨色，避免整段动画都染红。
+    const fresh = phase.added.includes(f.id) && time - phase.from <= Math.min(0.6, (phase.to - phase.from) * 0.22);
+    const color = fresh ? palette.fresh : palette.ink;
+    const len = ((f.magnitude > 0 ? f.magnitude : ref) / ref) * target;
+    const ux = f.dx, uy = -f.dy;
+    const x1 = at.x + ux * len, y1 = at.y + uy * len;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    if (fresh) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 9;
+    }
+    arrow(ctx, at.x, at.y, x1, y1, fresh ? 8 : 7);
+    ctx.restore();
+    const text = forceLabel(f, result, time);
+    const align: CanvasTextAlign = ux > 0.3 ? "left" : ux < -0.3 ? "right" : "center";
+    const w = ctx.measureText(text).width;
+    const nx = -uy, ny = ux;
+    const bx = x1 + ux * 9, by = y1 + uy * 9 + 3;
+    let spot = { x: bx, y: by };
+    let box = textBox(spot.x, spot.y, w, align);
+    // 先找既不越界也不压字的位置；都挤不下时按「越界量 ×1000 + 重叠面积」取最不难的一档。
+    let best: { spot: { x: number; y: number }; box: Box; score: number } | null = null;
+    for (const [along, side] of LABEL_SPOTS) {
+      const x = bx + ux * along + nx * side, y = by + uy * along + ny * side;
+      const candidate = textBox(x, y, w, align);
+      const outside = Math.max(0, limit.l - candidate.l) + Math.max(0, candidate.r - limit.r)
+        + Math.max(0, limit.t - candidate.t) + Math.max(0, candidate.b - limit.b);
+      const score = outside * 1000 + placed.reduce((sum, p) => sum + overlapArea(candidate, p), 0);
+      if (!score) {
+        spot = { x, y };
+        box = candidate;
+        best = null;
+        break;
+      }
+      if (!best || score < best.score) best = { spot: { x, y }, box: candidate, score };
+    }
+    if (best) {
+      spot = best.spot;
+      box = best.box;
+    }
+    placed.push(box);
+    ctx.textAlign = align;
+    ctx.font = fresh ? "bold 10px ui-monospace, monospace" : "10px ui-monospace, monospace";
+    label(ctx, text, spot.x, spot.y, color, palette.bg);
+    ctx.font = "10px ui-monospace, monospace";
+  }
+  ctx.restore();
+  ctx.textAlign = "left";
+  ctx.font = "11px system-ui, sans-serif";
+  ctx.lineWidth = 1;
+}
 
 function niceStep(span: number, target = 8): number {
   const raw = span / target;
@@ -86,10 +181,11 @@ function drawGround(ctx: CanvasRenderingContext2D, width: number, view: SceneVie
   ctx.restore();
 }
 
-function drawGrid(ctx: CanvasRenderingContext2D, view: SceneView, palette: Palette) {
+function drawGrid(ctx: CanvasRenderingContext2D, view: SceneView, palette: Palette): Box[] {
   const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
   const stepX = niceStep(view.worldW, clamp(Math.floor((view.worldW * view.scale) / 70), 3, 10));
   const stepY = niceStep(view.worldH, clamp(Math.floor((view.worldH * view.scale) / 24), 2, 8));
+  const boxes: Box[] = [];
   ctx.strokeStyle = palette.grid;
   ctx.fillStyle = palette.muted;
   ctx.textAlign = "center";
@@ -99,7 +195,9 @@ function drawGrid(ctx: CanvasRenderingContext2D, view: SceneView, palette: Palet
     ctx.moveTo(view.X(gx), PAD.top - 6);
     ctx.lineTo(view.X(gx), view.Y(0));
     ctx.stroke();
-    ctx.fillText(`${Number(gx.toFixed(2))}`, view.X(gx), view.Y(0) + 14);
+    const text = `${Number(gx.toFixed(2))}`;
+    boxes.push(textBox(view.X(gx), view.Y(0) + 14, ctx.measureText(text).width, "center"));
+    ctx.fillText(text, view.X(gx), view.Y(0) + 14);
   }
   ctx.textAlign = "right";
   const y0 = Math.ceil(view.yMin / stepY) * stepY;
@@ -108,10 +206,13 @@ function drawGrid(ctx: CanvasRenderingContext2D, view: SceneView, palette: Palet
     ctx.moveTo(view.ox - 6, view.Y(gy));
     ctx.lineTo(view.ox + view.worldW * view.scale, view.Y(gy));
     ctx.stroke();
-    ctx.fillText(`${Number(gy.toFixed(2))}`, view.ox - 10, view.Y(gy) + 4);
+    const text = `${Number(gy.toFixed(2))}`;
+    boxes.push(textBox(view.ox - 10, view.Y(gy) + 4, ctx.measureText(text).width, "right"));
+    ctx.fillText(text, view.ox - 10, view.Y(gy) + 4);
   }
   ctx.textAlign = "left";
   ctx.fillText("y / m", 8, PAD.top - 12);
+  return boxes;
 }
 
 function drawHud(ctx: CanvasRenderingContext2D, width: number, lines: string[], palette: Palette) {
@@ -183,17 +284,18 @@ function bodyAt(
   ctx.save();
   ctx.translate(bx, by);
   ctx.rotate(rotation);
-  ctx.fillStyle = body.shape === "board" ? palette.surface : palette.resultant;
-  ctx.strokeStyle = body.shape === "board" ? palette.fg : palette.surface;
-  ctx.lineWidth = body.shape === "board" ? 1.4 : 2;
+  ctx.fillStyle = palette.body;
+  ctx.strokeStyle = palette.ink;
+  ctx.lineWidth = 2.2;
   if (body.shape === "ball") {
     ctx.beginPath();
     ctx.arc(0, 0, w / 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   } else {
-    ctx.fillRect(-w / 2, -h / 2, w, h);
-    ctx.strokeRect(-w / 2, -h / 2, w, h);
+    panel(ctx, -w / 2, -h / 2, w, h, body.shape === "board" ? 3 : 2);
+    ctx.fill();
+    ctx.stroke();
   }
   ctx.restore();
   return { x: bx, y: by, state: s };
@@ -227,11 +329,12 @@ export function drawTemplateScene(
   const view = sceneTransform(width, height, result);
   ctx.font = "11px system-ui, sans-serif";
   ctx.lineWidth = 1;
-  if (options.grid) drawGrid(ctx, view, palette);
+  // 坐标刻度文字也参与避让，受力标签才不会压到数轴数字上。
+  const obstacles = options.grid ? drawGrid(ctx, view, palette) : [];
   drawGround(ctx, width, view, palette);
-  if (result.template === "incline") drawInclineScene(ctx, width, problem, result, time, view, palette, options);
-  else if (result.template === "blockBoard") drawBlockBoardScene(ctx, width, problem, result, time, view, palette, options);
-  else if (result.template === "collision1d") drawCollisionScene(ctx, width, problem, result, time, view, palette, options);
+  if (result.template === "incline") drawInclineScene(ctx, width, problem, result, time, view, palette, options, obstacles);
+  else if (result.template === "blockBoard") drawBlockBoardScene(ctx, width, problem, result, time, view, palette, options, obstacles);
+  else if (result.template === "collision1d") drawCollisionScene(ctx, width, problem, result, time, view, palette, options, obstacles);
 }
 
 function drawInclineScene(
@@ -243,6 +346,7 @@ function drawInclineScene(
   view: SceneView,
   palette: Palette,
   options: StageOptions,
+  obstacles: Box[],
 ) {
   const p = problem.params as InclineParams;
   const rad = p.angleDeg * Math.PI / 180;
@@ -253,10 +357,9 @@ function drawInclineScene(
   const bottom = { x: view.X(bottomX), y: view.Y(0) };
 
   ctx.save();
-  ctx.globalAlpha = 0.5;
-  ctx.fillStyle = palette.surface;
-  ctx.strokeStyle = palette.muted;
-  ctx.lineWidth = 1.4;
+  ctx.fillStyle = palette.body;
+  ctx.strokeStyle = palette.ink;
+  ctx.lineWidth = 1.8;
   ctx.beginPath();
   ctx.moveTo(top.x, top.y);
   ctx.lineTo(bottom.x, bottom.y);
@@ -297,7 +400,9 @@ function drawInclineScene(
     ctx.beginPath();
     ctx.arc(top.x, top.y, 3, 0, Math.PI * 2);
     ctx.fill();
-    label(ctx, `顶端 L = ${p.L.toFixed(1)} m`, top.x + 8, top.y - 8, palette.muted, palette.bg);
+    const apex = `顶端 L = ${p.L.toFixed(1)} m`;
+    obstacles.push(textBox(top.x + 8, top.y - 8, ctx.measureText(apex).width, "left"));
+    label(ctx, apex, top.x + 8, top.y - 8, palette.muted, palette.bg);
     if (result.reachedBottom) {
       ctx.fillStyle = palette.resultant;
       ctx.beginPath();
@@ -309,14 +414,8 @@ function drawInclineScene(
   if (options.vectors) {
     const v = Math.hypot(s.vx, s.vy);
     velocityArrow(ctx, point.x, point.y, s.vx, s.vy, view.scale, palette.vx, `v ${v.toFixed(2)}`, palette.bg);
-    const k = Math.min(52, view.scale * 0.9);
-    ctx.strokeStyle = palette.vy; ctx.fillStyle = palette.vy;
-    arrow(ctx, point.x, point.y, point.x, point.y + k * 0.7);
-    label(ctx, "mg", point.x + 5, point.y + k * 0.72, palette.vy, palette.bg);
-    ctx.strokeStyle = palette.info; ctx.fillStyle = palette.info;
-    arrow(ctx, point.x, point.y, point.x - cos * k * 0.55, point.y - sin * k * 0.55);
-    label(ctx, "f", point.x - cos * k * 0.6 - 4, point.y - sin * k * 0.6, palette.info, palette.bg);
   }
+  if (options.forces) drawForces(ctx, view, palette, result, time, { block: { x: point.x, y: point.y } }, obstacles);
 
   const vNow = Math.hypot(s.vx, s.vy);
   drawHud(ctx, width, width < 560
@@ -344,6 +443,7 @@ function drawBlockBoardScene(
   view: SceneView,
   palette: Palette,
   options: StageOptions,
+  obstacles: Box[],
 ) {
   const p = problem.params as BlockBoardParams;
   const block = result.bodies[0];
@@ -367,17 +467,28 @@ function drawBlockBoardScene(
       arrow(ctx, x1, y, x0, y, 5);
       ctx.restore();
       ctx.textAlign = "center";
-      label(ctx, `Δs = ${slip.toFixed(2)} m`, (x0 + x1) / 2, y + 13, palette.info, palette.bg);
+      const slipText = `Δs = ${slip.toFixed(2)} m`;
+      obstacles.push(textBox((x0 + x1) / 2, y + 13, ctx.measureText(slipText).width, "center"));
+      label(ctx, slipText, (x0 + x1) / 2, y + 13, palette.info, palette.bg);
       ctx.textAlign = "left";
     }
     ctx.textAlign = "center";
-    label(ctx, `${block.label} m = ${p.m} kg`, blockPoint.x, blockPoint.y - block.h * view.scale, palette.muted, palette.bg);
+    const blockName = `${block.label} m = ${p.m} kg`;
+    const blockNameY = blockPoint.y - block.h * view.scale;
+    obstacles.push(textBox(blockPoint.x, blockNameY, ctx.measureText(blockName).width, "center"));
+    label(ctx, blockName, blockPoint.x, blockNameY, palette.muted, palette.bg);
     ctx.textAlign = "left";
   }
 
   if (options.vectors) {
     velocityArrow(ctx, blockPoint.x, blockPoint.y, blockState.vx, 0, view.scale, palette.vx, `v₁ ${blockState.vx.toFixed(2)}`, palette.bg);
     velocityArrow(ctx, boardPoint.x, boardPoint.y - 6, boardState.vx, 0, view.scale, palette.info, `v₂ ${boardState.vx.toFixed(2)}`, palette.bg);
+  }
+  if (options.forces) {
+    drawForces(ctx, view, palette, result, time, {
+      block: { x: blockPoint.x, y: blockPoint.y },
+      board: { x: boardPoint.x, y: boardPoint.y },
+    }, obstacles);
   }
 
   drawHud(ctx, width, width < 560
@@ -402,6 +513,7 @@ function drawCollisionScene(
   view: SceneView,
   palette: Palette,
   options: StageOptions,
+  obstacles: Box[],
 ) {
   const p = problem.params as CollisionParams;
   const a = result.bodies[0], b = result.bodies[1];
@@ -411,8 +523,14 @@ function drawCollisionScene(
 
   if (options.markers) {
     ctx.textAlign = "center";
-    label(ctx, `A · m₁ ${p.m1} kg`, pa.x, pa.y - a.h * view.scale, palette.muted, palette.bg);
-    label(ctx, `B · m₂ ${p.m2} kg`, pb.x, pb.y - b.h * view.scale, palette.muted, palette.bg);
+    const names: [string, number, number][] = [
+      [`A · m₁ ${p.m1} kg`, pa.x, pa.y - a.h * view.scale],
+      [`B · m₂ ${p.m2} kg`, pb.x, pb.y - b.h * view.scale],
+    ];
+    for (const [text, x, y] of names) {
+      obstacles.push(textBox(x, y, ctx.measureText(text).width, "center"));
+      label(ctx, text, x, y, palette.muted, palette.bg);
+    }
     ctx.textAlign = "left";
     if (result.hit && Math.abs(time - result.tHit) < 0.16) {
       const mid = (pa.x + pb.x) / 2;
@@ -424,6 +542,9 @@ function drawCollisionScene(
   if (options.vectors) {
     velocityArrow(ctx, pa.x, pa.y, sa.vx, 0, view.scale, palette.vx, `v₁ ${sa.vx.toFixed(2)}`, palette.bg);
     velocityArrow(ctx, pb.x, pb.y, sb.vx, 0, view.scale, palette.info, `v₂ ${sb.vx.toFixed(2)}`, palette.bg);
+  }
+  if (options.forces) {
+    drawForces(ctx, view, palette, result, time, { a: { x: pa.x, y: pa.y }, b: { x: pb.x, y: pb.y } }, obstacles);
   }
 
   drawHud(ctx, width, width < 560

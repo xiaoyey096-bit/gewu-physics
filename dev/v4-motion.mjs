@@ -7,9 +7,17 @@ await runProbe('v4-motion', { port: 9360 }, async ({browser:b,expect,shot,log}) 
   const slider = label => `[role="slider"][aria-label^="${label}"]`;
   const value = label => b.evaluate(`Number(document.querySelector(${JSON.stringify(slider(label))}).getAttribute('aria-valuenow'))`);
   const set = async (label,n,blur=false) => {
+    // 右侧三个页签都 forceMount 常驻 DOM，改参数前必须把「动画参数」切到前台，否则输入框是隐藏的。
+    await b.click('动画参数',`${RIGHT} [role="tab"]`);
+    await b.wait(`!!document.querySelector(${JSON.stringify(input(label))})?.getClientRects().length`);
     await b.type(input(label), String(n));
     if (blur) await b.key('Tab','Tab',9); else await b.key('Enter','Enter',13);
     await b.wait(`Number(document.querySelector(${JSON.stringify(slider(label))}).getAttribute('aria-valuenow')) === ${n}`);
+  };
+  // 临界状态与定位按钮在「对象与受力」页签里，任何一次 set() 之后都要重新切回来。
+  const showStates = async () => {
+    await b.click('对象与受力',`${RIGHT} [role="tab"]`);
+    await b.wait(`!!document.querySelector('div[aria-label="题目临界状态"]')?.getClientRects().length`,'临界状态面板可见');
   };
   const initial = await b.evaluate(`Object.fromEntries([...document.querySelectorAll('input[aria-label^="自定义"]')].map(el=>[el.getAttribute('aria-label'),el.value]))`);
   expect('fourEditableFields',Object.keys(initial).length===4,initial);
@@ -39,8 +47,14 @@ await runProbe('v4-motion', { port: 9360 }, async ({browser:b,expect,shot,log}) 
   for(const [label,n] of [['初速度',20],['抛射角',30],['初始高度',5],['重力加速度',10]]) await set(label,n);
   const T=1+Math.sqrt(2);
   expect('manualParamsRecomputeDuration',Math.abs((await timeState(b)).duration-T)<1e-9,await timeState(b));
-  expect('criticalInitiallyCollapsed',await b.evaluate(`!document.querySelector('details[aria-label="题目临界状态"]').open`));
-  await b.click('对象与临界状态','summary');
+  // 右侧面板三个页签都常驻 DOM，靠 data-state + CSS 隐藏，所以断言可见性而不是存在性。
+  expect('criticalPanelHiddenUntilForcesTab',await b.evaluate(`(() => {
+    const box = document.querySelector('div[aria-label="题目临界状态"]');
+    return !!box && box.closest('aside')?.getAttribute('aria-label') === '动画参数与对话'
+      && box.closest('[role="tabpanel"]')?.dataset.state === 'inactive' && !box.getClientRects().length;
+  })()`));
+  await b.click('对象与受力',`${RIGHT} [role="tab"]`);
+  await b.wait(`!!document.querySelector('div[aria-label="题目临界状态"]')?.getClientRects().length`,'临界状态面板可见');
   expect('fourAnalyticCriticalStates',await b.evaluate(`document.querySelectorAll('button[aria-label^="临界状态 "]').length===4`));
   const double = async label => {
     const p=await b.box(`button[aria-label="临界状态 ${label}"]`);
@@ -58,15 +72,19 @@ await runProbe('v4-motion', { port: 9360 }, async ({browser:b,expect,shot,log}) 
   expect('landingTime',Math.abs((await timeState(b)).time-T)<1e-9);
   await b.clickSelector('button[aria-label="临界状态 出发点"]'); await b.key('Enter','Enter',13);
   expect('criticalKeyboardSeek',(await timeState(b)).time===0);
+  // 取景公式（worldW/worldH/pad）会随渲染层演进，探针不复制它：直接动态 import 应用自己的
+  // sceneTransform，把物理时刻换算成画布像素，避免镜像公式过期后误判成产品 bug。
   const coords = async (t, angle=30, scroll=true) => {
     if(scroll) await b.box(CANVAS);
-    return b.evaluate(`(() => {
+    return b.evaluate(`(async () => {
       const r=document.querySelector(${JSON.stringify(CANVAS)}).getBoundingClientRect();
-      const rad=${angle}*Math.PI/180,vx=20*Math.cos(rad),vy=20*Math.sin(rad),T=(vy+Math.sqrt(vy*vy+100))/10;
-      const H=5+vy*vy/20, W=Math.max(vx*T,H*.6,4),wh=Math.max(H,2.5),bottom=r.width<560?76:58;
-      const aw=r.width-74,ah=r.height-34-bottom,s=Math.min(aw/W,ah/wh),ox=48+Math.max(0,(aw-W*s)/2),oy=r.height-bottom;
+      const [{sceneTransform},{solveProjectile}]=await Promise.all([import('/lib/motion.ts'),import('/lib/physics.ts')]);
+      const read=(label,fallback)=>{const el=document.querySelector('[role="slider"][aria-label^="'+label+'"]');const n=Number(el?.getAttribute('aria-valuenow'));return Number.isFinite(n)&&el?n:fallback;};
+      const params={v0:read('初速度',20),angleDeg:${angle},h0:read('初始高度',5),g:read('重力加速度',9.8)};
+      const view=sceneTransform(r.width,r.height,solveProjectile(params));
+      const rad=${angle}*Math.PI/180,vx=params.v0*Math.cos(rad),vy=params.v0*Math.sin(rad);
       const time=${t??"Number(document.querySelector('[aria-label=\"动画时间轴\"]').getAttribute('aria-valuenow'))"};
-      return {x:r.x+ox+vx*time*s,y:r.y+oy-(5+vy*time-5*time*time)*s};
+      return {x:r.x+view.X(vx*time),y:r.y+view.Y(params.h0+vy*time-params.g*time*time/2)};
     })()`);
   };
   const drag=async(from,to,angle=30,extra={x:0,y:0})=>{
@@ -109,8 +127,9 @@ await runProbe('v4-motion', { port: 9360 }, async ({browser:b,expect,shot,log}) 
   await b.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});
   expect('touchCancelReleasesCapture',await b.evaluate(`document.querySelector(${JSON.stringify(CANVAS)}).classList.contains('cursor-grab')`));
   await shot('touch-drag-mobile.png'); await b.metrics(1440,900);
-  if(!await b.evaluate(`document.querySelector('details[aria-label="题目临界状态"]').open`)) await b.click('对象与临界状态','summary');
+  await showStates();
   await set('抛射角',90);
+  await showStates();
   await b.click('定位出发点');
   expect('verticalBranchControls',await b.exists('[role="group"][aria-label="竖直运动拖动分支"]'));
   await drag(0,1,90);
@@ -123,12 +142,22 @@ await runProbe('v4-motion', { port: 9360 }, async ({browser:b,expect,shot,log}) 
   await b.type('textarea[aria-label="编辑题目内容"]','一滑块以20 m/s的速度从5 m高处竖直向上抛出，忽略空气阻力，g取10 m/s²。求飞行时间和最大高度。');
   await b.click('保存题目','button',{exact:true}); await b.wait(`!document.querySelector('[role="dialog"]')`);
   expect('blockIdentified',await b.evaluate(`document.querySelector(${JSON.stringify(CANVAS)}).getAttribute('aria-label').includes('拖动滑块')`));
+  await showStates();
   await b.click('定位最高点'); await shot('block-and-critical.png');
   await b.click('动画参数','[role="tab"]',{exact:true});
   await set('抛射角',0); await set('初始高度',0);
-  expect('zeroDurationCriticalStates',(await timeState(b)).time===0 && await b.evaluate(`[...document.querySelectorAll('button[aria-label^="临界状态 "]')].length===3 && [...document.querySelectorAll('button')].some(el=>el.textContent.trim()==='播放'&&el.disabled)`));
+  const zeroDuration = {
+    time: (await timeState(b)).time,
+    states: await b.evaluate(`[...document.querySelectorAll('button[aria-label^="临界状态 "]')].map(el=>el.getAttribute('aria-label'))`),
+    playDisabled: await b.evaluate(`[...document.querySelectorAll('button')].some(el=>el.textContent.trim()==='播放'&&el.disabled)`),
+  };
+  // 零飞行时间时出发点/最高点/落地前瞬间都落在 t=0，临界状态按时刻去重后只剩出发点。
+  expect('zeroDurationCriticalStates',zeroDuration.time===0&&zeroDuration.states.length===1&&zeroDuration.states[0]==='临界状态 出发点'&&zeroDuration.playDisabled,zeroDuration);
   await b.clickSelector(CANVAS); await b.key('End','End',35);
   expect('zeroDurationKeySafe',(await timeState(b)).time===0);
+  await set('初始高度',5);
+  const flatLaunch = await b.evaluate(`[...document.querySelectorAll('button[aria-label^="临界状态 "]')].map(el=>el.getAttribute('aria-label'))`);
+  expect('flatLaunchMergesApexIntoStart',flatLaunch.join('|')==='临界状态 出发点|临界状态 落地前瞬间',flatLaunch);
   await set('抛射角',37.125); await set('初始高度',6.25);
   await b.send('Page.reload'); await b.wait(`!![...document.querySelectorAll('button')].find(el=>el.textContent.trim()==='进入学习空间')`); await enterStudy(b); await openExisting(b);
   const restored={angle:await value('抛射角'),height:await value('初始高度'),title:await b.evaluate(`document.querySelector('header')?.textContent`)};

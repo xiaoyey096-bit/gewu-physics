@@ -90,6 +90,7 @@ function ParameterValueInput({ config, params, onCommit }: {
 }
 
 const DISPLAY_TOGGLES: { key: keyof StageOptions; label: string; hint: string }[] = [
+  { key: "forces", label: "受力", hint: "按当前受力阶段画力的箭头，新出现的力用红色" },
   { key: "vectors", label: "速度矢量", hint: "显示水平/竖直/合速度三个箭头" },
   { key: "energy", label: "能量", hint: "动能与势能实时条，验证机械能守恒" },
   { key: "trail", label: "残影", hint: "最近时刻的小球虚像" },

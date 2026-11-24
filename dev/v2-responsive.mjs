@@ -33,7 +33,10 @@ await runProbe("v2-responsive", {port:9346, width:1440, height:900}, async ({bro
         tabs:[...document.querySelectorAll('[role="tab"]')].map((el) => ({text:el.textContent.trim(), inSheet:sheet?.contains(el)}))};
     })()`);
     check(`${name}ParameterSheet`, state.title === "动画参数与对话" && state.sliders === 4 && state.visibleSliders === 4 && state.modal === "true", state);
-    check(`${name}OnlyRightSheetTabs`, state.tabs.length === 2 && state.tabs.every((tab) => tab.inSheet) && state.tabs[0].text === "动画参数" && state.tabs[1].text === "对话", state.tabs);
+    // 小屏下右侧面板整体收进 sheet，页签集合必须全部在 sheet 内，不能一半在面板一半在弹层。
+    const RIGHT_TABS = ["动画参数", "对话", "对象与受力"];
+    check(`${name}OnlyRightSheetTabs`, state.tabs.length === RIGHT_TABS.length && state.tabs.every((tab) => tab.inSheet)
+      && RIGHT_TABS.every((label) => state.tabs.some((tab) => tab.text === label)), state.tabs);
     await browser.wait(`!!document.activeElement?.closest(${JSON.stringify(dialog)})`, `${name} focus enters sheet`);
     const trapped = [];
     for (let i = 0; i < 20; i++) {

@@ -5,7 +5,7 @@ import type { BlockBoardParams, CollisionParams, InclineParams, Problem, Project
 import { DEFAULT_STAGE } from "./types";
 import { sampleAt } from "./physics";
 import { motionObject, sceneTransform, stateAt } from "./motion";
-import { drawTemplateScene } from "./renderer-multi";
+import { drawForces, drawTemplateScene, OBJECT_R } from "./renderer-multi";
 
 export interface Palette {
   bg: string;
@@ -19,6 +19,12 @@ export interface Palette {
   resultant: string;
   grid: string;
   info: string;
+  /** 物体描边与常规受力箭头的墨色。 */
+  ink: string;
+  /** 物体填充色：接近不上色。 */
+  body: string;
+  /** 临界状态新出现的力，用鲜艳色标出。 */
+  fresh: string;
 }
 
 export interface RenderState {
@@ -97,7 +103,8 @@ export function drawScene(
 
   ctx.clearRect(0, 0, width, height);
 
-  const { worldW, worldH, availW, availH, scale, ox, oy, X, Y } = sceneTransform(width, height, result);
+  const view = sceneTransform(width, height, result);
+  const { worldW, worldH, availW, availH, scale, ox, oy, X, Y } = view;
   const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
   ctx.font = "11px system-ui, sans-serif";
@@ -148,15 +155,29 @@ export function drawScene(
   }
   ctx.restore();
 
-  // 发射台
+  // 发射台：只画抛出点所在的一小段台边，台面顶线在抛出点下方一个物体半径处，物体才是「放在台面上」
   const h0 = params.h0;
   if (h0 > 0.01) {
-    ctx.fillStyle = palette.surface;
+    const padTop = Y(h0) + OBJECT_R;
+    const padR = X(0) + Math.max(6, 0.15 * scale);
+    const padL = Math.max(6, padR - Math.max(26, 1.5 * scale));
+    const padH = Math.max(5, 0.28 * scale);
+    ctx.fillStyle = palette.body;
+    ctx.strokeStyle = palette.ink;
+    ctx.lineWidth = 1.8;
+    ctx.fillRect(padL, padTop, padR - padL, padH);
+    ctx.strokeRect(padL, padTop, padR - padL, padH);
+    ctx.save();
+    ctx.globalAlpha = 0.4;
     ctx.strokeStyle = palette.muted;
     ctx.lineWidth = 1;
-    const pw = Math.max(6, 0.35 * scale);
-    ctx.fillRect(X(0) - pw, Y(h0), pw, h0 * scale);
-    ctx.strokeRect(X(0) - pw, Y(h0), pw, h0 * scale);
+    for (let hx = padL + 5; hx < padR + 6; hx += 9) {
+      ctx.beginPath();
+      ctx.moveTo(hx, padTop + padH);
+      ctx.lineTo(hx - 6, padTop + padH + 7);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   // 完整轨迹（淡色虚线预览）
@@ -353,29 +374,23 @@ export function drawScene(
   const object = motionObject(problem);
   const objectPath = () => {
     ctx.beginPath();
-    if (object.shape === "box") ctx.rect(bx - 8, by - 7, 16, 14);
-    else ctx.arc(bx, by, 7, 0, Math.PI * 2);
+    if (object.shape === "box") ctx.rect(bx - 8, by - OBJECT_R, 16, OBJECT_R * 2);
+    else ctx.arc(bx, by, OBJECT_R, 0, Math.PI * 2);
   };
   ctx.save();
   if (options.glow) {
     ctx.shadowColor = palette.resultant;
-    ctx.shadowBlur = 16;
+    ctx.shadowBlur = 14;
   }
-  ctx.fillStyle = palette.resultant;
+  ctx.fillStyle = palette.body;
   objectPath();
   ctx.fill();
   ctx.restore();
-  ctx.strokeStyle = palette.surface;
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = palette.ink;
+  ctx.lineWidth = 2.2;
   objectPath();
   ctx.stroke();
-  ctx.save();
-  ctx.globalAlpha = 0.55;
-  ctx.fillStyle = "#ffffff";
-  ctx.beginPath();
-  ctx.arc(bx - 2.2, by - 2.4, 2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  if (options.forces) drawForces(ctx, view, palette, result, time, { primary: { x: bx, y: by } });
 
   // HUD
   const speed = Math.hypot(cur.vx, cur.vy);
@@ -386,9 +401,14 @@ export function drawScene(
         `y = ${Math.max(0, cur.y).toFixed(2)} m   v = ${speed.toFixed(2)} m/s`,
       ]
     : [`t = ${cur.t.toFixed(2)} s   x = ${cur.x.toFixed(2)} m   y = ${Math.max(0, cur.y).toFixed(2)} m   v = ${speed.toFixed(2)} m/s`];
+  // 轨迹方程与画面数值同源，提醒学生动画不是预设关键帧；放进 HUD 底色里才不会压到抛出点。
+  const eq = narrow ? null : "x = v₀·cosθ·t    y = h₀ + v₀·sinθ·t − g·t²/2";
+  const rowH = narrow ? 13 : 16;
   ctx.font = narrow ? "10px ui-monospace, monospace" : "12px ui-monospace, monospace";
-  const boxW = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 18;
-  const boxH = lines.length * (narrow ? 13 : 16) + 10;
+  const hudW = Math.max(...lines.map((l) => ctx.measureText(l).width));
+  ctx.font = "10px ui-monospace, monospace";
+  const boxW = Math.max(hudW, eq ? ctx.measureText(eq).width : 0) + 18;
+  const boxH = (lines.length + (eq ? 1 : 0)) * rowH + 10;
   ctx.save();
   ctx.globalAlpha = 0.78;
   ctx.fillStyle = palette.surface;
@@ -398,17 +418,16 @@ export function drawScene(
   ctx.fill();
   ctx.restore();
   ctx.fillStyle = palette.fg;
+  ctx.font = narrow ? "10px ui-monospace, monospace" : "12px ui-monospace, monospace";
   lines.forEach((line, i) => {
-    ctx.fillText(line, PAD.left + 1, 6 + (narrow ? 14 : 17) + i * (narrow ? 13 : 16));
+    ctx.fillText(line, PAD.left + 1, 6 + (narrow ? 14 : 17) + i * rowH);
   });
-
-  // 轨迹方程：与画面数值同源，提醒学生动画不是预设关键帧
-  if (!narrow) {
+  if (eq) {
     ctx.font = "10px ui-monospace, monospace";
     ctx.fillStyle = palette.muted;
-    ctx.fillText("x = v₀·cosθ·t    y = h₀ + v₀·sinθ·t − g·t²/2", PAD.left + 1, 6 + boxH + 14);
-    ctx.font = "11px system-ui, sans-serif";
+    ctx.fillText(eq, PAD.left + 1, 6 + 17 + lines.length * rowH);
   }
+  ctx.font = "11px system-ui, sans-serif";
 
   // 能量视角：轨迹上方的空白用来实时验证机械能守恒（按单位质量计，J/kg）
   if (options.energy && width >= 340) {

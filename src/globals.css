@@ -42,6 +42,9 @@
   --gw-v: #c81e5a;
   --gw-grid: #e3e7ee;
   --gw-info: #2f6df6;
+  --gw-ink: #141821;
+  --gw-body: #ffffff;
+  --gw-fresh: #d92b2b;
   --gw-success: #3f8f29;
   --gw-warning: #b45309;
   --gw-danger: #d92d20;
@@ -96,6 +99,9 @@
   --gw-v: #ff5c93;
   --gw-grid: #1e3348;
   --gw-info: #6ea8ff;
+  --gw-ink: #dfe8f5;
+  --gw-body: #1b2c44;
+  --gw-fresh: #ff5c5c;
   --gw-success: #8ede4f;
   --gw-warning: #f59e0b;
   --gw-danger: #ff6b6b;
@@ -138,6 +144,8 @@
   --color-vy: var(--gw-vy);
   --color-v: var(--gw-v);
   --color-info: var(--gw-info);
+  --color-fresh: var(--gw-fresh);
+  --color-ink: var(--gw-ink);
   --color-success: var(--gw-success);
   --color-warning: var(--gw-warning);
   --color-danger: var(--gw-danger);

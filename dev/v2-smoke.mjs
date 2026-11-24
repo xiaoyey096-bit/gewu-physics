@@ -15,10 +15,12 @@ await runProbe("v2-smoke", { port:9333, width:1440, height:900 }, async ({ brows
   check("intakeThreeColumns", await browser.exists(LEFT) && await browser.exists(RIGHT));
   await shot("01-intake.png");
 
-  await browser.click("斜抛 · 30°", 'main button', { exact:true });
+  // 入口页不再提供示例题按钮，改为直接输入题干后 Enter 提交。
+  await browser.type('textarea[aria-label="题干或提问输入"]', "从地面以 20 m/s 的初速度、与水平方向成 30° 角斜向上抛出一小球，不计空气阻力，g 取 9.8 m/s²。求小球的射程、最大高度与飞行时间。");
+  await browser.key("Enter", "Enter", 13);
   await browser.wait(`!!document.querySelector('[aria-label="题目内容（可编辑）"]')`, "confirmation editor");
   const statement = await browser.evaluate(`document.querySelector('[aria-label="题目内容（可编辑）"]').value`);
-  check("confirmationKeepsExample", statement.includes("20 m/s") && statement.includes("30°"), statement);
+  check("confirmationKeepsTypedStatement", statement.includes("20 m/s") && statement.includes("30°"), statement);
   await shot("02-confirm.png");
   await browser.click("生成动画与题解", 'main button', { exact:true });
   await browser.wait(`!!document.querySelector(${JSON.stringify(CANVAS)})`, "generated workspace");
@@ -58,7 +60,7 @@ await runProbe("v2-smoke", { port:9333, width:1440, height:900 }, async ({ brows
   const solutionNumbers = (exam.source.match(/-?\d+(?:\.\d+)?/g) || []).map((value) => Number(value).toString());
   check("localPhysicsResults", ["35.35", "5.10", "2.04"].every((value) => solutionNumbers.includes(Number(value).toString()) && exam.renderedNumbers.includes(Number(value).toString())), exam);
   const tabs = await browser.evaluate(`[...document.querySelectorAll('[role="tab"]')].map((el) => ({text:el.textContent.trim(), right:!!el.closest(${JSON.stringify(RIGHT)})}))`);
-  check("onlyRightParameterAndChatTabs", tabs.length === 2 && tabs.every((tab) => tab.right) && tabs[0].text === "动画参数" && tabs[1].text === "对话", tabs);
+  check("onlyRightParameterAndChatTabs", tabs.length === 3 && tabs.every((tab) => tab.right) && ["动画参数", "对话", "对象与受力"].every((label) => tabs.some((tab) => tab.text === label)), tabs);
   check("noObsoleteTabs", !(await browser.exists('main[aria-label="题目学习会话"] [role="tab"], nav[aria-label="视图切换"]')));
   for (const label of ["简要题解", "详细讲解"]) {
     const block = await browser.evaluate(`(() => {

@@ -1,5 +1,5 @@
 // Library regression probe: read-only problem detail, rename, delete/undo, sibling reorder, bulk/undo.
-import { BASE, LEFT, ROW, runProbe, enterStudy, openExisting, waitFor } from "./cdp.mjs";
+import { BASE, LEFT, RIGHT, ROW, runProbe, enterStudy, openExisting, waitFor } from "./cdp.mjs";
 
 await runProbe("v2-lib", {port:9345, width:1440, height:900}, async ({browser, check, expect, log, shot}) => {
   const titles = () => browser.evaluate(`[...document.querySelectorAll(${JSON.stringify(`${LEFT} ${ROW}`)})].map((el) => el.getAttribute('aria-label').slice(3,-4))`);
@@ -19,13 +19,16 @@ await runProbe("v2-lib", {port:9345, width:1440, height:900}, async ({browser, c
 
   check("noObsoleteCurrentEditor", await browser.evaluate(`![...document.querySelectorAll(${JSON.stringify(`${LEFT} summary, ${LEFT} button`)})].some((el) => el.textContent.trim() === '编辑当前题目' || el.getAttribute('aria-label') === '编辑当前题目') && !document.querySelector(${JSON.stringify(`${LEFT} textarea[aria-label="题目内容"]`)})`));
   const beforeDetail = await titles();
-  // The new bottom panel shares the left pane, but is not a library row/group.
+  // 临界状态面板已移入右侧页签：题库栏里不该再有它，也不能吞掉题库行。
+  await browser.click("对象与受力", `${RIGHT} [role="tab"]`);
+  await browser.wait(`!!document.querySelector('div[aria-label="题目临界状态"]')`, "critical panel rendered");
   const criticalPanel = await browser.evaluate(`(() => {
-    const panel = document.querySelector(${JSON.stringify(`${LEFT} [aria-label="题目临界状态"]`)});
-    return {present:!!panel, libraryRows:panel?.querySelectorAll(${JSON.stringify(ROW)}).length,
-      bottom:panel?.getBoundingClientRect().bottom, paneBottom:document.querySelector(${JSON.stringify(LEFT)})?.getBoundingClientRect().bottom};
+    const panel = document.querySelector('div[aria-label="题目临界状态"]');
+    return {present: !!panel, inRightPane: panel?.closest('aside')?.getAttribute('aria-label') === '动画参数与对话',
+      libraryPanel: !!document.querySelector(${JSON.stringify(`${LEFT} div[aria-label="题目临界状态"]`)}),
+      libraryRows: document.querySelectorAll(${JSON.stringify(`${LEFT} ${ROW}`)}).length};
   })()`);
-  check("criticalPanelCoexistsBelowLibrary", criticalPanel.present && criticalPanel.libraryRows === 0 && Math.abs(criticalPanel.bottom - criticalPanel.paneBottom) <= 2 && beforeDetail.length > 0, criticalPanel);
+  check("criticalPanelMovedOutOfLibraryPane", criticalPanel.present && criticalPanel.inRightPane && !criticalPanel.libraryPanel && criticalPanel.libraryRows > 0 && beforeDetail.length > 0, criticalPanel);
   const target = await browser.box(`${LEFT} button[aria-label=${JSON.stringify(`查看题目 ${sessionTitle}`)}]`);
   // CDP click counts generate a real double-click rather than dispatching a DOM event.
   await browser.send("Input.dispatchMouseEvent", {type:"mouseMoved", x:target.x, y:target.y});

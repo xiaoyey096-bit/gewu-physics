@@ -41,8 +41,10 @@ export interface BlockBoardParams {
   L: number;
   /** 滑块初速度 m/s */
   v0: number;
-  /** 动摩擦因数 */
+  /** 滑块与木板间的动摩擦因数 */
   mu: number;
+  /** 木板与地面间的动摩擦因数，0 表示光滑地面；旧数据缺省按 0 处理 */
+  muGround?: number;
   g: number;
 }
 
@@ -123,7 +125,9 @@ export function validateProblem(input: unknown): ValidationResult {
     if (!inRange(v0, 0, 500)) return { ok: false, error: "invalid_v0" };
     if (!inRange(mu, 0, 1)) return { ok: false, error: "invalid_mu" };
     if (!inRange(g, 0.01, 100)) return { ok: false, error: "invalid_g" };
-    return { ok: true, problem: { version: SCHEMA_VERSION, template, statement: p.statement, params: { m, M, L, v0, mu, g }, ask } };
+    // 题目没提地面摩擦时按光滑地面处理，旧数据同样走这条默认值。
+    const muGround = inRange(params.muGround, 0, 1) ? params.muGround : 0;
+    return { ok: true, problem: { version: SCHEMA_VERSION, template, statement: p.statement, params: { m, M, L, v0, mu, muGround, g }, ask } };
   }
 
   const { m1, m2, v1, v2, e } = params;

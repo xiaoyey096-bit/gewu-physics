@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
-  ImagePlus,
   MessageCircleQuestion,
+  Plus,
   Send,
   Sparkles,
   Trash2,
@@ -17,11 +17,12 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ApiError, requestJson } from "@/lib/api";
+import { extractProblemFile } from "@/lib/document";
 import { fileToDataUrl } from "@/lib/image";
 import { solveProblem } from "@/lib/physics";
 import { useStore } from "@/lib/store";
 import { parseParamsFromText, splitStatementAndQuestions, kindLabel, deriveTitle } from "@/lib/text";
-import { EXAMPLES, templateMeta, type TemplateExample } from "@/lib/templates";
+import { templateMeta } from "@/lib/templates";
 import { suggestedQuestions } from "@/lib/explain";
 import { G_PRESETS, type Problem, type ProblemParams, type SessionSource, type TemplateId } from "@/lib/types";
 import { ImageLightbox } from "@/src/features/library/ImageLightbox";
@@ -43,12 +44,10 @@ interface Draft {
 interface Props {
   configured: boolean | null;
   onCreated: (id: string) => void;
-  onOpenSession: (id: string) => void;
-  onOpenLibrary: () => void;
 }
 
-export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibrary }: Props) {
-  const { sessions, createSession } = useStore();
+export function IntakeScreen({ configured, onCreated }: Props) {
+  const { createSession } = useStore();
   const [stage, setStage] = useState<"compose" | "confirm">("compose");
   const [text, setText] = useState("");
   const [image, setImage] = useState<string | undefined>();
@@ -56,27 +55,45 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [fileBusy, setFileBusy] = useState(false);
+  const [fileNotice, setFileNotice] = useState<string | undefined>();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [zoomOpen, setZoomOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
 
-  const recent = useMemo(
-    () => [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 4),
-    [sessions],
-  );
-
   const acceptFile = useCallback(async (file: File | undefined | null) => {
     if (!file) return;
+    setError(null);
     if (!file.type.startsWith("image/")) {
-      setError("请选择图片文件（PNG / JPG 等）。");
+      setFileBusy(true);
+      setFileNotice(undefined);
+      try {
+        const doc = await extractProblemFile(file);
+        if (doc.image) {
+          setImage(doc.image);
+          setImageName(`${file.name.replace(/\.[^.]+$/, "")} · 首页`);
+        }
+        if (doc.text) {
+          setText((prev) => (prev.trim() ? `${prev.trim()}\n${doc.text}` : doc.text));
+          textRef.current?.focus();
+        }
+        if (!doc.image && !doc.text) setError(doc.notice ?? "没有从这个文件里读到内容。");
+        else if (doc.notice) setFileNotice(doc.notice);
+        else if (doc.image) setFileNotice(`已读取 ${file.name} 首页图片${doc.text ? " 与文字层" : ""}。`);
+        else setFileNotice(`已把 ${file.name} 的文字填进输入框。`);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "文件读取失败。");
+      } finally {
+        setFileBusy(false);
+      }
       return;
     }
-    setError(null);
     try {
       const url = await fileToDataUrl(file);
       setImage(url);
       setImageName(file.name || "题目照片.jpg");
+      setFileNotice(undefined);
     } catch (e) {
       setError(e instanceof Error ? e.message : "图片处理失败。");
     }
@@ -94,19 +111,6 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
   }, [stage, acceptFile]);
-
-  const useExample = (preset: TemplateExample) => {
-    setError(null);
-    setDraft({
-      template: preset.template,
-      statement: preset.statement,
-      questions: preset.questions,
-      params: preset.params,
-      ask: preset.ask,
-      source: "example",
-    });
-    setStage("confirm");
-  };
 
   const submit = async () => {
     const trimmed = text.trim();
@@ -225,9 +229,18 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
             </div>
 
             <section
-              className="gw-rise gw-panel relative overflow-hidden rounded-2xl p-4 sm:p-5"
+              className={`gw-rise gw-panel relative overflow-hidden rounded-2xl p-4 sm:p-5 transition-colors ${
+                dragOver ? "ring-2 ring-primary/60" : ""
+              }`}
               style={{ "--d": "120ms" } as React.CSSProperties}
               aria-label="题目输入"
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(false);
+                void acceptFile(e.dataTransfer.files?.[0]);
+              }}
             >
               <div className="pointer-events-none absolute inset-x-0 top-0 h-px overflow-hidden">
                 <span className="gw-sweep block h-px w-1/3 gw-hairline" />
@@ -263,67 +276,49 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
                   </div>
                 </div>
               ) : (
-                <div
-                  role="button"
-                  tabIndex={0}
-                  aria-label="上传物理题图片"
-                  className={`mb-3 flex min-h-[124px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-4 text-center transition-colors ${
-                    dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/60"
-                  }`}
-                  onClick={() => inputRef.current?.click()}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      inputRef.current?.click();
-                    }
-                  }}
-                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                  onDragLeave={() => setDragOver(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragOver(false);
-                    void acceptFile(e.dataTransfer.files?.[0]);
-                  }}
-                >
-                  <span className="grid size-10 place-items-center rounded-full bg-primary/10 text-primary">
-                    <ImagePlus className="size-5" />
-                  </span>
-                  <span className="text-sm font-medium">拖拽 / 点击 / Ctrl+V 粘贴题目照片</span>
-                  <span className="text-xs text-muted-foreground">支持 JPG · PNG，自动压缩；也可以只输入文字</span>
-                </div>
+                <p className="mb-2 text-xs leading-6 text-muted-foreground">
+                  可以只写文字；也能把题目图片拖进来、Ctrl+V 粘贴，或用左下角 + 选择本地文件（图片 · PDF · Word · txt）。
+                </p>
               )}
               <input
                 ref={inputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,.pdf,.docx,.txt,.md"
                 className="hidden"
-                aria-label="选择题目图片文件"
+                aria-label="选择题目文件"
                 onChange={(e) => { void acceptFile(e.target.files?.[0]); e.target.value = ""; }}
               />
 
               <Textarea
                 ref={textRef}
                 value={text}
-                rows={3}
-                placeholder="粘贴题干，或直接提问：为什么水平方向的速度一直不变？（Ctrl + Enter 发送）"
+                rows={5}
+                placeholder="粘贴题干，或直接提问：为什么水平方向的速度一直不变？（Enter 发送，Ctrl + Enter 换行）"
                 aria-label="题干或提问输入"
-                className="min-h-[92px] resize-y text-sm"
+                className="min-h-[120px] resize-y text-sm"
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => {
-                  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                  if (e.key !== "Enter") return;
+                  if (e.ctrlKey || e.metaKey || e.shiftKey) {
                     e.preventDefault();
-                    void submit();
+                    const el = e.currentTarget;
+                    const start = el.selectionStart, end = el.selectionEnd;
+                    const next = `${text.slice(0, start)}\n${text.slice(end)}`;
+                    setText(next);
+                    requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + 1; });
+                    return;
                   }
+                  e.preventDefault();
+                  if (!busy) void submit();
                 }}
               />
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="text-xs text-muted-foreground">示例题：</span>
-                {EXAMPLES.map((ex) => (
-                  <Button key={ex.key} variant="outline" size="xs" onClick={() => useExample(ex)}>
-                    <Wand2 /> {ex.label}
-                  </Button>
-                ))}
+                <Button variant="outline" size="icon-sm" aria-label="添加本地文件" title="添加图片 / PDF / Word / txt" onClick={() => inputRef.current?.click()}>
+                  <Plus />
+                </Button>
+                {fileBusy && (<><Spinner className="size-3.5" /><span className="text-[11px] text-muted-foreground">正在读取文件…</span></>)}
+                {fileNotice && <span className="min-w-0 flex-1 text-[11px] leading-5 text-muted-foreground">{fileNotice}</span>}
                 <div className="ml-auto flex items-center gap-2">
                   <span className="hidden text-[11px] text-muted-foreground sm:inline">{text.length} 字</span>
                   <Button onClick={() => void submit()} disabled={busy || (!image && !text.trim())}>
@@ -348,64 +343,6 @@ export function IntakeScreen({ configured, onCreated, onOpenSession, onOpenLibra
               )}
             </section>
 
-            <section className="gw-rise flex flex-col gap-3" style={{ "--d": "200ms" } as React.CSSProperties}>
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold">最近题目</h2>
-                <span className="text-xs text-muted-foreground">点击任意一条直接进入动画工作台</span>
-                <Button variant="link" size="xs" className="ml-auto px-0" onClick={onOpenLibrary}>
-                  查看全部题库
-                </Button>
-              </div>
-              {recent.length === 0 ? (
-                <p className="rounded-xl gw-inset p-4 text-sm text-muted-foreground">
-                  题库还是空的。上传一张题目照片，或点上面的示例题开始。
-                </p>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {recent.map((s) => {
-                    const r = solveProblem(s.problem);
-                    return (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => onOpenSession(s.id)}
-                        className="gw-panel group flex flex-col gap-2 rounded-xl p-3 text-left transition-transform hover:-translate-y-0.5 hover:border-primary/60"
-                      >
-                        <span className="flex items-center gap-2">
-                          {s.image ? (
-                            <img src={s.image} alt="" className="h-9 w-12 rounded object-cover" />
-                          ) : (
-                            <span
-                              className="grid h-9 w-12 place-items-center rounded font-mono text-[10px] text-white"
-                              style={{ background: "linear-gradient(135deg, var(--gw-info), var(--site-accent))" }}
-                            >
-                              {s.problem.template === "projectile" ? kindLabel(s.problem.params) : templateMeta(s.problem.template).short}
-                            </span>
-                          )}
-                          <span className="min-w-0 flex-1 truncate text-sm font-medium">{s.title}</span>
-                        </span>
-                        <span className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                          {s.problem.statement}
-                        </span>
-                        <span className="mt-auto flex flex-wrap gap-1.5 font-mono text-[10px] text-muted-foreground">
-                          {r.template === "projectile" ? <>
-                            <span className="rounded bg-secondary px-1.5 py-0.5">X {r.range.toFixed(1)} m</span>
-                            <span className="rounded bg-secondary px-1.5 py-0.5">T {r.flightTime.toFixed(2)} s</span>
-                          </> : r.scalars.slice(0, 2).map((s2) => (
-                            <span key={s2.key} className="rounded bg-secondary px-1.5 py-0.5">{s2.label} {s2.value.toFixed(s2.digits ?? 1)} {s2.unit}</span>
-                          ))}
-                          {s.questions.length > 0 && (
-                            <span className="rounded px-1.5 py-0.5 text-vx" style={{ background: "color-mix(in oklab, var(--gw-vx) 14%, transparent)" }}>
-                              {s.questions.length} 问
-                            </span>
-                          )}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
           </div>
         ) : draft ? (
           <div className="flex flex-col gap-4">

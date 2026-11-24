@@ -13,9 +13,11 @@ import {
 } from "react";
 import {
   DEFAULT_PREFS,
+  type BlockBoardParams,
   type LibraryFilter,
   type LibrarySort,
   type Prefs,
+  type ProblemParams,
   type ProjectRecord,
   type SessionRecord,
   type SessionSource,
@@ -29,7 +31,7 @@ const DB_NAME = "gewu-studio";
 const DB_VERSION = 1;
 const PREFS_KEY = "gewu-prefs-v2";
 const FALLBACK_KEY = "gewu-studio-fallback-v2";
-const HS_SEED_KEY = "gewu-seed-hs-v1";
+const HS_SEED_KEY = "gewu-seed-hs-v2";
 
 export type StorageMode = "indexeddb" | "local" | "memory";
 
@@ -117,7 +119,7 @@ function loadPrefs(): Prefs {
     return {
       ...DEFAULT_PREFS,
       ...parsed,
-      rightTab: parsed.rightTab === "chat" ? "chat" : "parameters",
+      rightTab: parsed.rightTab === "chat" || parsed.rightTab === "states" ? parsed.rightTab : "parameters",
       stage: { ...DEFAULT_PREFS.stage, ...(parsed.stage ?? {}) },
     };
   } catch {
@@ -200,55 +202,91 @@ function seedSnapshot(): Snapshot {
   return { projects, sessions };
 }
 
-/** 把三类 P0 示例题补进用户已有的「高中题库」文件夹；仅执行一次，且按模板+标题去重。 */
+/** 旧记录缺少后来新增的字段时补齐，避免滑块与求解读到 undefined。 */
+function normalizeSession(s: SessionRecord): SessionRecord {
+  const withDefaults = (params: ProblemParams): ProblemParams =>
+    s.problem.template === "blockBoard" && (params as BlockBoardParams).muGround === undefined
+      ? { ...params, muGround: 0 }
+      : params;
+  return {
+    ...s,
+    problem: { ...s.problem, params: withDefaults(s.problem.params) },
+    baseParams: withDefaults(s.baseParams ?? s.problem.params),
+    questions: Array.isArray(s.questions) ? s.questions : [],
+  };
+}
+
+/**
+ * 把四类 P0 之外的综合示例题放进「高中题库」：首次运行时建夹并写入；
+ * 之后只在示例内容本身变化时刷新同一记录，用户删除的文件夹与题目都不复活。
+ */
 function seedHighSchoolExamples(snapshot: Snapshot): void {
-  const folder = snapshot.projects.find((p) => p.name === "高中题库");
-  if (!folder) return;
+  let seeded = false;
   try {
-    if (localStorage.getItem(HS_SEED_KEY)) return;
+    seeded = Boolean(localStorage.getItem(HS_SEED_KEY));
   } catch {
-    /* 读不到标记时按去重逻辑继续 */
+    /* 读不到标记时按新增处理 */
   }
-  const keys = new Set(
-    snapshot.sessions.filter((s) => s.projectId === folder.id).map((s) => `${s.problem.template}:${s.title}`),
-  );
+  let folder = snapshot.projects.find((p) => p.name === "高中题库");
+  if (!folder) {
+    if (seeded) return;
+    folder = { id: "p-hs", name: "高中题库", kind: "custom", order: 2, createdAt: Date.now() };
+    snapshot.projects.push(folder);
+    snapshot.projects.sort((a, b) => a.order - b.order);
+  }
   const now = Date.now();
   let order = snapshot.sessions.filter((s) => s.projectId === folder.id).reduce((m, s) => Math.min(m, s.order), 0);
   const added: SessionRecord[] = [];
+  let dirty = false;
   for (const example of EXAMPLES) {
     if (example.template === "projectile") continue;
+    const id = `s-hs-${example.key}`;
     const title = deriveTitle(example.statement, example.params, example.template);
-    const key = `${example.template}:${title}`;
-    if (keys.has(key)) continue;
-    keys.add(key);
+    const problem: Problem = { version: 1, template: example.template, statement: example.statement, params: example.params, ask: example.ask };
+    const existing = snapshot.sessions.find((s) => s.id === id);
+    if (existing) {
+      if (JSON.stringify(existing.problem) !== JSON.stringify(problem) || existing.title !== title) {
+        const index = snapshot.sessions.indexOf(existing);
+        const refreshed: SessionRecord = {
+          ...existing,
+          projectId: folder.id,
+          title,
+          problem,
+          baseParams: example.params,
+          questions: example.questions,
+          questionTimes: Object.fromEntries(example.questions.map((question) => [question, now])),
+          updatedAt: now,
+        };
+        snapshot.sessions[index] = refreshed;
+        dirty = true;
+      }
+      continue;
+    }
+    if (seeded) continue;
     order -= 1;
-    added.push({
-      id: `s-hs-${example.key}`,
+    const record: SessionRecord = {
+      id,
       projectId: folder.id,
       title,
       source: "example",
       createdAt: now,
       updatedAt: now,
       order,
-      problem: { version: 1, template: example.template, statement: example.statement, params: example.params, ask: example.ask },
+      problem,
       baseParams: example.params,
       questions: example.questions,
       questionTimes: Object.fromEntries(example.questions.map((question) => [question, now])),
-    });
+    };
+    added.push(record);
+    dirty = true;
   }
-  if (!added.length) {
+  if (added.length) snapshot.sessions = [...added, ...snapshot.sessions];
+  if (dirty || !seeded) {
     try {
       localStorage.setItem(HS_SEED_KEY, "1");
     } catch {
-      /* 忽略 */
+      /* 忽略：本机没写成功时下次再同步一次 */
     }
-    return;
-  }
-  snapshot.sessions = [...added, ...snapshot.sessions];
-  try {
-    localStorage.setItem(HS_SEED_KEY, "1");
-  } catch {
-    /* 忽略：本机没写成功时下次按去重逻辑重来 */
   }
 }
 
@@ -432,11 +470,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       modeRef.current = nextMode;
       setMode(nextMode);
       projectsRef.current = snapshot.projects;
-      sessionsRef.current = snapshot.sessions.map((s) => ({
-        ...s,
-        baseParams: s.baseParams ?? s.problem.params,
-        questions: Array.isArray(s.questions) ? s.questions : [],
-      }));
+      sessionsRef.current = snapshot.sessions.map(normalizeSession);
       setProjects(snapshot.projects);
       setSessions(sessionsRef.current);
       if (db) {

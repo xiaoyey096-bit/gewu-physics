@@ -31,10 +31,10 @@ await runProbe("v5-audit", { port: 9362, width: 1440, height: 900 }, async ({ br
   await browser.goto(BASE);
   await browser.wait(`!![...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '进入学习空间')`, "landing entry");
   await enterStudy(browser);
-  await browser.wait(`!!document.querySelector('input[aria-label="选择题目图片文件"]')`, "intake input");
+  await browser.wait(`!!document.querySelector('input[aria-label="选择题目文件"]')`, "intake input");
   await browser.send("DOM.enable");
   const documentNode = await browser.send("DOM.getDocument", { depth: -1 });
-  const fileInput = await browser.send("DOM.querySelector", { nodeId: documentNode.root.nodeId, selector: 'input[aria-label="选择题目图片文件"]' });
+  const fileInput = await browser.send("DOM.querySelector", { nodeId: documentNode.root.nodeId, selector: 'input[aria-label="选择题目文件"]' });
   await browser.send("DOM.setFileInputFiles", { nodeId: fileInput.nodeId, files: [join(ROOT, "dev", "problem-photo.png")] });
   await browser.wait(`!!document.querySelector('button[aria-label="放大查看题目照片"]')`, "photo preview");
   check("photoPreviewVisible", await browser.exists('button[aria-label="放大查看题目照片"]'));

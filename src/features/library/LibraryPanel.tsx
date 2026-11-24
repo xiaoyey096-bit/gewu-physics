@@ -7,6 +7,7 @@ import {
   Folder,
   FolderPlus,
   GripVertical,
+  History,
   ListFilter,
   MoreHorizontal,
   Pencil,
@@ -40,6 +41,19 @@ const SOURCE_LABEL: Record<SessionRecord["source"], string> = {
   example: "示例题",
 };
 
+const RECENT_PAGE = 15;
+
+function agoLabel(ts: number): string {
+  const minutes = Math.floor((Date.now() - ts) / 60000);
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes} 分前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 31) return `${days} 天前`;
+  return new Date(ts).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+}
+
 interface Props {
   onOpenSession: (id: string, showProblem?: boolean) => void;
   showProblem?: boolean;
@@ -71,12 +85,35 @@ export function LibraryPanel({ onOpenSession, showProblem = false, onBackToLibra
   const [renaming, setRenaming] = useState<{ kind: "project" | "session"; id: string; value: string } | null>(null);
   const [zoom, setZoom] = useState(false);
   const [newProject, setNewProject] = useState<{ parentId: string | null; value: string } | null>(null);
+  const [recentShown, setRecentShown] = useState(RECENT_PAGE);
+  const [recentCollapsed, setRecentCollapsed] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const recentSentinelRef = useRef<HTMLDivElement>(null);
 
   const visible = useMemo(
     () => filterSessions(sortSessions(sessions, prefs.librarySort), prefs.libraryFilter, query),
     [sessions, prefs.librarySort, prefs.libraryFilter, query],
   );
+
+  // 「最近」按更新时间排，与项目树共用一条滚动条；筛选与搜索同样生效，避免列表与搜索结果不一致。
+  const recent = useMemo(
+    () => filterSessions(sessions, prefs.libraryFilter, query).sort((a, b) => b.updatedAt - a.updatedAt),
+    [sessions, prefs.libraryFilter, query],
+  );
+
+  // 首屏只渲染 15 条；用户真正滚动过列表后才继续取下一页，避免刚打开就把全部题目画出来。
+  const [recentScrolled, setRecentScrolled] = useState(false);
+  useEffect(() => {
+    const sentinel = recentSentinelRef.current;
+    const root = listRef.current;
+    if (!recentScrolled || !sentinel || !root || recentShown >= recent.length) return;
+    const io = new IntersectionObserver(
+      (entries) => entries.some((e) => e.isIntersecting) && setRecentShown((n) => n + RECENT_PAGE),
+      { root, rootMargin: "160px" },
+    );
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [recentScrolled, recentShown, recent.length, recentCollapsed]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, SessionRecord[]>();
@@ -381,7 +418,74 @@ export function LibraryPanel({ onOpenSession, showProblem = false, onBackToLibra
           )}
         </div>
 
-        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-3" onScroll={() => setRecentScrolled(true)}>
+          {recent.length > 0 && (
+            <section className="mb-2 border-b border-border pb-2" aria-label="最近题目">
+              <div className="flex items-center gap-1 px-1.5 py-1">
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={recentCollapsed ? "展开最近" : "折叠最近"}
+                  aria-expanded={!recentCollapsed}
+                  onClick={() => setRecentCollapsed((v) => !v)}
+                >
+                  {recentCollapsed ? <ChevronRight /> : <ChevronDown />}
+                </Button>
+                <History className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="text-xs font-semibold tracking-wide text-muted-foreground">最近</span>
+                <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                  {Math.min(recentShown, recent.length)}/{recent.length}
+                </span>
+              </div>
+              {!recentCollapsed && (
+                <>
+                  <ul className="ml-2 flex flex-col gap-0.5 border-l border-border pl-1.5">
+                    {recent.slice(0, recentShown).map((session) => (
+                      <li key={session.id}>
+                        <button
+                          type="button"
+                          onClick={() => onOpenSession(session.id, false)}
+                          aria-label={`打开题目 ${session.title}`}
+                          aria-current={activeSession?.id === session.id ? "true" : undefined}
+                          title={`${session.title} · ${agoLabel(session.updatedAt)}打开工作台`}
+                          className={cn(
+                            "flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            activeSession?.id === session.id ? "bg-primary/12 ring-1 ring-primary/40" : "hover:bg-secondary",
+                          )}
+                        >
+                          {session.image ? (
+                            <img src={session.image} alt="" className="h-6 w-8 shrink-0 rounded object-cover" />
+                          ) : (
+                            <span
+                              className="grid h-6 w-8 shrink-0 place-items-center rounded font-mono text-[9px] text-white"
+                              style={{ background: "linear-gradient(135deg, var(--gw-vx), var(--gw-info))" }}
+                            >
+                              {session.problem.template === "projectile" ? kindLabel(session.problem.params) : templateMeta(session.problem.template).short}
+                            </span>
+                          )}
+                          <span className="min-w-0 flex-1 truncate text-xs">{session.title}</span>
+                          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{agoLabel(session.updatedAt)}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {recent.length > recentShown && (
+                    <div ref={recentSentinelRef} className="ml-2 pl-1.5 pt-1">
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        className="w-full text-[11px]"
+                        aria-label="显示更多最近题目"
+                        onClick={() => setRecentShown((n) => n + RECENT_PAGE)}
+                      >
+                        再显示 {Math.min(RECENT_PAGE, recent.length - recentShown)} 条
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+          )}
           {(tree.get(null) ?? []).map((project) => renderFolder(project, 0))}
           {visible.length === 0 && (
             <p className="px-2 py-6 text-center text-xs text-muted-foreground">
@@ -466,6 +570,14 @@ function ProjectGroup(props: GroupProps) {
     event.preventDefault();
     keepFocus.current = false;
   };
+  const subfolderActive = props.subfolder !== null;
+  const subfolderInput = useRef<HTMLInputElement>(null);
+  // 菜单卸载后焦点落在 body，autoFocus 会被冲掉，所以等一帧再显式聚焦。
+  useEffect(() => {
+    if (!subfolderActive) return;
+    const at = requestAnimationFrame(() => subfolderInput.current?.focus());
+    return () => cancelAnimationFrame(at);
+  }, [subfolderActive]);
   return (
     <div className="mb-1" style={depth ? { paddingLeft: depth * 14 } : undefined}>
       <div
@@ -532,7 +644,12 @@ function ProjectGroup(props: GroupProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40" onCloseAutoFocus={onCloseAutoFocus}>
-            <DropdownMenuItem onClick={props.onNewSubfolder}>
+            <DropdownMenuItem
+              onClick={() => {
+                keepFocus.current = true;
+                props.onNewSubfolder();
+              }}
+            >
               <FolderPlus /> 新建子文件夹
             </DropdownMenuItem>
             <DropdownMenuItem
@@ -560,6 +677,7 @@ function ProjectGroup(props: GroupProps) {
           {props.subfolder && (
             <div className="mb-1 flex items-center gap-1.5 pl-1">
               <Input
+                ref={subfolderInput}
                 autoFocus
                 value={props.subfolder.value}
                 placeholder="子文件夹名称"
