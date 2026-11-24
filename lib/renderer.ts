@@ -360,7 +360,7 @@ export function drawScene(
     ctx.strokeStyle = palette.resultant; ctx.fillStyle = palette.resultant;
     ctx.lineWidth = 2.2;
     arrow(ctx, bx, by, bx + cur.vx * vScale, by - cur.vy * vScale);
-    ctx.font = "10px ui-monospace, monospace";
+    ctx.font = "11px ui-monospace, monospace";
     if (Math.abs(cur.vx * vScale) > 26) {
       label(ctx, "v₀ₓ", bx + cur.vx * vScale * 0.5, by + 13, palette.vx, palette.bg);
     }
@@ -403,10 +403,10 @@ export function drawScene(
     : [`t = ${cur.t.toFixed(2)} s   x = ${cur.x.toFixed(2)} m   y = ${Math.max(0, cur.y).toFixed(2)} m   v = ${speed.toFixed(2)} m/s`];
   // 轨迹方程与画面数值同源，提醒学生动画不是预设关键帧；放进 HUD 底色里才不会压到抛出点。
   const eq = narrow ? null : "x = v₀·cosθ·t    y = h₀ + v₀·sinθ·t − g·t²/2";
-  const rowH = narrow ? 13 : 16;
-  ctx.font = narrow ? "10px ui-monospace, monospace" : "12px ui-monospace, monospace";
+  const rowH = narrow ? 15 : 18;
+  ctx.font = narrow ? "11px ui-monospace, monospace" : "13px ui-monospace, monospace";
   const hudW = Math.max(...lines.map((l) => ctx.measureText(l).width));
-  ctx.font = "10px ui-monospace, monospace";
+  ctx.font = "11px ui-monospace, monospace";
   const boxW = Math.max(hudW, eq ? ctx.measureText(eq).width : 0) + 18;
   const boxH = (lines.length + (eq ? 1 : 0)) * rowH + 10;
   ctx.save();
@@ -418,14 +418,14 @@ export function drawScene(
   ctx.fill();
   ctx.restore();
   ctx.fillStyle = palette.fg;
-  ctx.font = narrow ? "10px ui-monospace, monospace" : "12px ui-monospace, monospace";
+  ctx.font = narrow ? "11px ui-monospace, monospace" : "13px ui-monospace, monospace";
   lines.forEach((line, i) => {
-    ctx.fillText(line, PAD.left + 1, 6 + (narrow ? 14 : 17) + i * rowH);
+    ctx.fillText(line, PAD.left + 1, 6 + (narrow ? 16 : 19) + i * rowH);
   });
   if (eq) {
-    ctx.font = "10px ui-monospace, monospace";
+    ctx.font = "11px ui-monospace, monospace";
     ctx.fillStyle = palette.muted;
-    ctx.fillText(eq, PAD.left + 1, 6 + 17 + lines.length * rowH);
+    ctx.fillText(eq, PAD.left + 1, 6 + 19 + lines.length * rowH);
   }
   ctx.font = "11px system-ui, sans-serif";
 
@@ -437,8 +437,8 @@ export function drawScene(
     const eky = 0.5 * cur.vy * cur.vy;
     const ep = g * Math.max(0, cur.y);
     const total = 0.5 * params.v0 * params.v0 + g * params.h0;
-    const pw = compact ? 186 : 216;
-    const ph = compact ? 82 : 92;
+    const pw = compact ? 196 : 232;
+    const ph = compact ? 92 : 104;
     const px = width - PAD.right - pw - 2;
     const py = PAD.top + (compact ? 26 : 30);
     const card = (x: number, y: number, w: number, h: number, r: number) => {
@@ -459,14 +459,14 @@ export function drawScene(
     card(px, py, pw, ph, 10);
     ctx.stroke();
     ctx.restore();
-    ctx.font = compact ? "9px ui-monospace, monospace" : "10px ui-monospace, monospace";
+    ctx.font = compact ? "10px ui-monospace, monospace" : "11px ui-monospace, monospace";
     ctx.fillStyle = palette.muted;
-    ctx.fillText(compact ? "机械能守恒 · J/kg" : "机械能守恒 · 比能量 J/kg", px + 10, py + 16);
+    ctx.fillText(compact ? "机械能守恒 · J/kg" : "机械能守恒 · 比能量 J/kg", px + 10, py + 17);
     ctx.textAlign = "right";
     ctx.fillStyle = palette.fg;
-    ctx.fillText(`Σ ${total.toFixed(1)}`, px + pw - 10, py + 16);
+    ctx.fillText(`Σ ${total.toFixed(1)}`, px + pw - 10, py + 17);
     ctx.textAlign = "left";
-    const bx0 = px + 10, by0 = py + (compact ? 22 : 24), bw = pw - 20, bh = compact ? 8 : 9;
+    const bx0 = px + 10, by0 = py + (compact ? 24 : 27), bw = pw - 20, bh = compact ? 9 : 10;
     const denom = Math.max(total, 1e-6);
     ctx.save();
     card(bx0, by0, bw, bh, 4);
@@ -488,11 +488,11 @@ export function drawScene(
       [compact ? "势能 g·y" : "重力势能 g·y", palette.info, ep],
     ];
     rows.forEach(([name, color, v], i) => {
-      const ry = py + (compact ? 42 : 48) + i * (compact ? 13 : 15);
+      const ry = py + (compact ? 46 : 54) + i * (compact ? 15 : 17);
       ctx.fillStyle = color;
-      ctx.fillRect(bx0, ry - (compact ? 6 : 7), compact ? 6 : 7, compact ? 6 : 7);
+      ctx.fillRect(bx0, ry - (compact ? 7 : 8), compact ? 7 : 8, compact ? 7 : 8);
       ctx.fillStyle = palette.muted;
-      ctx.fillText(name, bx0 + (compact ? 10 : 12), ry);
+      ctx.fillText(name, bx0 + (compact ? 11 : 13), ry);
       ctx.textAlign = "right";
       ctx.fillStyle = palette.fg;
       ctx.fillText(v.toFixed(1), px + pw - 10, ry);

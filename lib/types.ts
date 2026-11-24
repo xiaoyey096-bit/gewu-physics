@@ -262,8 +262,10 @@ export interface SessionRecord {
 export interface StageOptions {
   grid: boolean;
   vectors: boolean;
-  /** 受力箭头：按当前受力阶段绘制，新出现的力用鲜艳色。 */
+  /** 动画过程中是否持续叠加受力箭头；关掉后受力只在「定位」临界状态时出现。 */
   forces: boolean;
+  /** 定位临界状态时，除受力箭头之外是否再画运动方向箭头（速度等）。 */
+  stateArrows: boolean;
   trail: boolean;
   markers: boolean;
   strobe: boolean;
@@ -321,6 +323,8 @@ export interface Explanation {
 
 export interface StageApi {
   seek: (t: number) => void;
+  /** 定位到某个临界状态：暂停并把画面切到「状态视图」，此时显示该时刻的受力。 */
+  seekState: (t: number) => void;
   play: () => void;
   pause: () => void;
   replay: () => void;
@@ -331,7 +335,8 @@ export interface StageApi {
 export const DEFAULT_STAGE: StageOptions = {
   grid: true,
   vectors: true,
-  forces: true,
+  forces: false,
+  stateArrows: true,
   trail: true,
   markers: true,
   strobe: false,

@@ -49,7 +49,7 @@ function ParameterValueInput({ config, params, onCommit }: {
 
   return (
     <>
-      <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2 text-xs">
+      <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2 text-[13px]">
         <span>{label} <span className="font-mono">{symbol}</span></span>
         <div className="flex min-w-0 max-w-full items-baseline gap-1 font-mono tabular-nums">
           <input
@@ -75,13 +75,13 @@ function ParameterValueInput({ config, params, onCommit }: {
                 setDraft({ source: params, text: String(value) });
               }
             }}
-            className={`h-7 w-24 min-w-0 rounded-md border px-2 text-right text-xs text-slate-900 outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${invalid ? "border-red-400 bg-red-50 focus-visible:ring-red-400" : "border-sky-200 bg-sky-50 focus-visible:ring-sky-400"}`}
+            className={`h-8 w-24 min-w-0 rounded-md border px-2 text-right text-[13px] text-slate-900 outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${invalid ? "border-red-400 bg-red-50 focus-visible:ring-red-400" : "border-sky-200 bg-sky-50 focus-visible:ring-sky-400"}`}
           />
           <span className="shrink-0 text-muted-foreground">{unit}</span>
         </div>
       </div>
       {invalid && (
-        <p id={errorId} role="status" className="text-[11px] leading-relaxed text-red-600">
+        <p id={errorId} role="status" className="text-xs leading-relaxed text-red-600">
           请输入 {min}–{max} {unit} 范围内的有效数字（可含小数）。当前输入未应用；按 Escape 恢复。
         </p>
       )}
@@ -89,8 +89,11 @@ function ParameterValueInput({ config, params, onCommit }: {
   );
 }
 
-const DISPLAY_TOGGLES: { key: keyof StageOptions; label: string; hint: string }[] = [
-  { key: "forces", label: "受力", hint: "按当前受力阶段画力的箭头，新出现的力用红色" },
+type ToggleKey = "grid" | "vectors" | "forces" | "stateArrows" | "trail" | "markers" | "strobe" | "glow" | "energy";
+
+const DISPLAY_TOGGLES: { key: ToggleKey; label: string; hint: string }[] = [
+  { key: "forces", label: "动画受力", hint: "播放过程中持续画受力箭头。关掉后受力只在右侧「对象与受力」里定位到某个临界状态时出现。" },
+  { key: "stateArrows", label: "状态箭头", hint: "定位临界状态时，在受力箭头之外再画速度等运动方向箭头。" },
   { key: "vectors", label: "速度矢量", hint: "显示水平/竖直/合速度三个箭头" },
   { key: "energy", label: "能量", hint: "动能与势能实时条，验证机械能守恒" },
   { key: "trail", label: "残影", hint: "最近时刻的小球虚像" },
@@ -106,17 +109,17 @@ export function ParameterPanel({ template, params, baseParams, onTemplate, onPar
 
   return (
     <section className="flex min-w-0 flex-col gap-4 p-5" aria-label="参数讲解与调整">
-      <div className="space-y-2"><h2 className="text-sm font-semibold">动画参数</h2><p className="text-[11px] leading-5 text-muted-foreground">改变一个条件，看看运动会怎样。</p></div>
+      <div className="space-y-2"><h2 className="text-sm font-semibold">动画参数</h2><p className="text-xs leading-6 text-muted-foreground">改变一个条件，看看运动会怎样。</p></div>
       <div className="space-y-1.5">
-        <span className="text-[11px] text-muted-foreground">题型模板</span>
+        <span className="text-xs text-muted-foreground">题型模板</span>
         <Select value={template} onValueChange={(v) => onTemplate(v as TemplateId)}>
-          <SelectTrigger className="h-8 w-full text-xs" aria-label="题型模板">
+          <SelectTrigger className="h-8 w-full text-[13px]" aria-label="题型模板">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {TEMPLATES.map((t) => (
               <SelectItem key={t.id} value={t.id}>
-                <span className="flex items-center gap-2"><span>{t.label}</span><span className="text-[10px] text-muted-foreground">{t.description}</span></span>
+                <span className="flex items-center gap-2"><span>{t.label}</span><span className="text-[11px] text-muted-foreground">{t.description}</span></span>
               </SelectItem>
             ))}
           </SelectContent>
@@ -130,7 +133,7 @@ export function ParameterPanel({ template, params, baseParams, onTemplate, onPar
           return (
             <section key={key} className="flex min-w-0 flex-col gap-2 py-3 first:pt-0 last:pb-0" aria-label={`${label} ${symbol}`}>
               <ParameterValueInput config={config} params={params} onCommit={(v) => set({ [key]: v }, true)} />
-              {note?.meaning && <p className="text-[11px] leading-relaxed text-muted-foreground">{note.meaning}</p>}
+              {note?.meaning && <p className="text-xs leading-relaxed text-muted-foreground">{note.meaning}</p>}
               <div className="flex min-w-0 items-center gap-2">
                 <Slider
                   value={[value]}
@@ -143,7 +146,7 @@ export function ParameterPanel({ template, params, baseParams, onTemplate, onPar
                 />
                 {key === "g" && (
                   <Select value={String(value)} onValueChange={(v) => set({ g: Number(v) }, true)}>
-                    <SelectTrigger size="sm" className="h-7 w-[104px] shrink-0 text-[11px]" aria-label="重力加速度预设">
+                    <SelectTrigger size="sm" className="h-8 w-[112px] shrink-0 text-xs" aria-label="重力加速度预设">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -158,7 +161,7 @@ export function ParameterPanel({ template, params, baseParams, onTemplate, onPar
                 )}
               </div>
               {note && (note.effect || note.current) && (
-                <details className="text-[11px] leading-relaxed text-muted-foreground">
+                <details className="text-xs leading-relaxed text-muted-foreground">
                   <summary className="cursor-pointer rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${label} ${symbol} 更多讲解`}>
                     更多讲解
                   </summary>
@@ -187,7 +190,7 @@ export function ParameterPanel({ template, params, baseParams, onTemplate, onPar
         </Button>
       </div>
       <div className="space-y-2 border-t border-border pt-3" role="group" aria-label="动画显示选项">
-        <h4 className="text-[11px] font-medium text-muted-foreground">显示选项</h4>
+        <h4 className="text-xs font-medium text-foreground">显示选项</h4>
         <div className="flex flex-wrap gap-1.5">
           {DISPLAY_TOGGLES.map((t) => (
             <Toggle
@@ -196,7 +199,7 @@ export function ParameterPanel({ template, params, baseParams, onTemplate, onPar
               size="sm"
               title={t.hint}
               aria-label={t.label}
-              className="h-7 gap-1 px-2 text-[11px] data-[state=on]:border-muted-foreground/50 data-[state=on]:bg-muted data-[state=on]:text-foreground"
+              className="h-8 gap-1 px-2.5 text-xs data-[state=on]:border-muted-foreground/50 data-[state=on]:bg-muted data-[state=on]:text-foreground"
               pressed={options[t.key]}
               onPressedChange={(v) => onOptions({ [t.key]: v })}
             >

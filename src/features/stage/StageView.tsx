@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { criticalStates, motionObject, sceneTransform, stateOf, trajectoryTimeAt } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { VideoExport } from "./VideoExport";
@@ -52,6 +52,12 @@ export function StageView(props: Props) {
   const dragRef = useRef<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const [dragBranch, setDragBranch] = useState<"rise" | "fall">("rise");
+  // 由「定位」进入的状态视图：受力只在停下来的那一刻按状态显示，播放或拖时间轴即退出。
+  const [stateView, setStateView] = useState(false);
+  const viewOptions = useMemo<StageOptions>(
+    () => (stateView ? { ...options, forces: true, vectors: options.vectors || options.stateArrows } : options),
+    [options, stateView],
+  );
   const vertical = problem.template === "projectile" && Math.abs(Math.cos((params as { angleDeg: number }).angleDeg * Math.PI / 180)) < 1e-6;
 
   const paint = useCallback((t: number) => {
@@ -69,8 +75,8 @@ export function StageView(props: Props) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawScene(ctx, w, h, { problem, result, time: t }, palette, options);
-  }, [problem, result, palette, options]);
+    drawScene(ctx, w, h, { problem, result, time: t }, palette, viewOptions);
+  }, [problem, result, palette, viewOptions]);
 
   const paintRef = useRef(paint);
   useEffect(() => {
@@ -95,6 +101,7 @@ export function StageView(props: Props) {
   useEffect(() => {
     timeRef.current = 0;
     phaseRef.current = 0;
+    setStateView(false);
     setTime(0);
     paintRef.current(0);
     onPhaseChange(0);
@@ -146,10 +153,18 @@ export function StageView(props: Props) {
   const seek = useCallback((t: number) => {
     const clamped = Math.max(0, Math.min(t, duration));
     timeRef.current = clamped;
+    setStateView(false);
     setTime(clamped);
     paintRef.current(clamped);
     reportPhase(clamped);
   }, [duration, reportPhase]);
+
+  // 「定位」到临界状态：暂停后停在状态视图，由 viewOptions 强制画出此刻的受力。
+  const seekState = useCallback((t: number) => {
+    setPlaying(false);
+    seek(t);
+    setStateView(true);
+  }, [seek]);
 
   const play = useCallback(() => {
     if (duration <= 0) return;
@@ -157,6 +172,7 @@ export function StageView(props: Props) {
       timeRef.current = 0;
       setTime(0);
     }
+    setStateView(false);
     setPlaying(true);
   }, [duration]);
 
@@ -164,6 +180,7 @@ export function StageView(props: Props) {
 
   const replay = useCallback(() => {
     timeRef.current = 0;
+    setStateView(false);
     setTime(0);
     paintRef.current(0);
     reportPhase(0);
@@ -175,12 +192,12 @@ export function StageView(props: Props) {
     out.width = width; out.height = height;
     const ctx = out.getContext("2d")!;
     ctx.scale(scale, scale);
-    drawScene(ctx, width / scale, height / scale, { problem, result, time: Math.max(0, Math.min(t, duration)) }, palette, options);
+    drawScene(ctx, width / scale, height / scale, { problem, result, time: Math.max(0, Math.min(t, duration)) }, palette, viewOptions);
     ctx.globalCompositeOperation = "destination-over";
     ctx.fillStyle = palette.bg;
     ctx.fillRect(0, 0, width / scale, height / scale);
     return out;
-  }, [problem, result, duration, palette, options]);
+  }, [problem, result, duration, palette, viewOptions]);
   const exportPng = useCallback((t = timeRef.current, label = "当前状态") => {
     const canvas = canvasRef.current, wrap = wrapRef.current;
     if (!canvas || !wrap || !wrap.clientWidth) return;
@@ -203,9 +220,9 @@ export function StageView(props: Props) {
   }, [problem, result, palette, object.label, snapshot]);
 
   useEffect(() => {
-    apiRef.current = { seek, play, pause, replay, exportPng, exportCritical };
+    apiRef.current = { seek, seekState, play, pause, replay, exportPng, exportCritical };
     return () => { apiRef.current = null; };
-  }, [apiRef, seek, play, pause, replay, exportPng, exportCritical]);
+  }, [apiRef, seek, seekState, play, pause, replay, exportPng, exportCritical]);
 
   const pointerPosition = (event: PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -268,12 +285,12 @@ export function StageView(props: Props) {
           }}
         />
         <div className="pointer-events-none absolute right-2 top-2 flex flex-col items-end gap-1">
-          <Badge variant="secondary" className="px-2 text-[10px]">{templateBadge(problem)} · 解析解</Badge>
-          <span className="rounded bg-background/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+          <Badge variant="secondary" className="px-2 text-[11px]">{templateBadge(problem)} · 解析解</Badge>
+          <span className="rounded bg-background/85 px-1.5 py-0.5 font-mono text-[11px] text-foreground">
             {playing ? "播放中" : time >= duration && duration > 0 ? "已结束" : "已暂停"} · {speed}×
           </span>
         </div>
-        <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap items-center gap-2 rounded-lg bg-background/70 px-2 py-1 text-[10px] text-muted-foreground">
+        <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap items-center gap-2 rounded-lg bg-background/85 px-2 py-1 text-[11px] text-foreground">
           {problem.template === "projectile" ? <>
             <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-vx)" }} />水平 v₀ₓ</span>
             <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-vy)" }} />竖直 vᵧ</span>

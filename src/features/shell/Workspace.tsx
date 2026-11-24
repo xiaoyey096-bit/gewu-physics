@@ -59,16 +59,16 @@ export function StudyLayout({ configured, onNewProblem, onHome, onOpenSession, t
       <h2 className="text-sm font-semibold">动画参数</h2>
       <p className="text-xs leading-6 text-muted-foreground">生成一道题目后，在这里调节参数，观察轨迹和题解如何一起变化。</p>
       <div className="rounded-xl border border-dashed border-border p-4 font-mono text-xs leading-8 text-muted-foreground">抛体 v₀ · θ · h₀<br />斜面 m · θ · μ · L<br />滑块木板 m · M · L · μ<br />碰撞 m₁ · m₂ · v₁ · v₂ · e</div>
-      <p className="text-[11px] leading-6 text-muted-foreground">当前接入抛体、斜面下滑、滑块木板与一维碰撞四类模型；其余题型陆续加入。</p>
+      <p className="text-xs leading-6 text-muted-foreground">当前接入抛体、斜面下滑、滑块木板与一维碰撞四类模型；其余题型陆续加入。</p>
     </div>
   );
   const rightPanel = (
     <Tabs value={prefs.rightTab} onValueChange={(value) => setPrefs({ rightTab: value === "chat" || value === "states" ? value : "parameters" })} className="h-full min-h-0 gap-0">
       <div className="shrink-0 border-b border-border p-3">
         <TabsList className="w-full" aria-label="右侧面板">
-          <TabsTrigger value="parameters"><SlidersHorizontal />动画参数</TabsTrigger>
-          <TabsTrigger value="chat"><MessageSquare />对话</TabsTrigger>
-          <TabsTrigger value="states"><Crosshair />对象与受力</TabsTrigger>
+          <TabsTrigger value="parameters" className="text-foreground/85"><SlidersHorizontal />动画参数</TabsTrigger>
+          <TabsTrigger value="chat" className="text-foreground/85"><MessageSquare />对话</TabsTrigger>
+          <TabsTrigger value="states" className="text-foreground/85"><Crosshair />对象与受力</TabsTrigger>
         </TabsList>
       </div>
       <TabsContent value="parameters" forceMount className="min-h-0 overflow-y-auto data-[state=inactive]:hidden">{controls}</TabsContent>
@@ -270,7 +270,7 @@ export function Workspace({ configured, onNewProblem, onHome, onOpenSession, sho
 
   return (
     <StudyLayout configured={configured} onNewProblem={() => leave(onNewProblem)} onHome={() => leave(onHome)} onOpenSession={openSession} title={session.title} projectName={projects.find((p) => p.id === session.projectId)?.name} showProblem={showProblem} onBackToLibrary={onBackToLibrary}
-      criticalPoints={<CriticalPoints problem={problem} result={result} onSeek={(time) => { stageApi.current?.pause(); stageApi.current?.seek(time); }} onExport={(time, label) => stageApi.current?.exportPng(time, label)} onExportAll={() => stageApi.current?.exportCritical()} />}
+      criticalPoints={<CriticalPoints problem={problem} result={result} onSeek={(time) => stageApi.current?.seekState(time)} onExport={(time, label) => stageApi.current?.exportPng(time, label)} onExportAll={() => stageApi.current?.exportCritical()} />}
       parameters={<ParameterPanel template={problem.template} params={liveParams} baseParams={session.baseParams} onTemplate={changeTemplate} onParams={onParams} options={prefs.stage} onOptions={onOptions} notes={explanation.params} onRandom={randomize} />}
       conversation={<ConversationPanel session={session} explanation={explanation} configured={configured} aiBusy={aiBusy} insight={paramsSaved ? session.insight : undefined} exploring={exploring} onAsk={ask} onAiExplain={aiExplain} onEditProblem={editProblem} />}>
       {exploring && <p className="text-xs text-vy">当前为参数探究：动画与题解使用右侧参数，原题干保持不变。</p>}

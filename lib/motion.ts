@@ -18,7 +18,11 @@ export function stateOf(result: SolveResult, time: number) {
   return sampleAt(result.series, time);
 }
 
-/** 某时刻所处的受力阶段，以及相对上一阶段新出现 / 消失的力。 */
+/**
+ * 某时刻所处的受力阶段，以及新出现 / 消失的力。
+ * 「新出现」只认这个力在整段运动里的第一次登场：中途消失又回归的力沿用首次的常规色，
+ * 否则同一个力每次回来都要变一次红，学生反而以为它是另一个力。
+ */
 export function forceStateOf(result: SolveResult, time: number) {
   const phases = result.forcePhases ?? [];
   if (!phases.length) return { phase: null as ForcePhase | null, newForces: [] as ForceVector[], goneForces: [] as ForceVector[], forces: [] as ForceVector[] };
@@ -27,10 +31,11 @@ export function forceStateOf(result: SolveResult, time: number) {
   const phase = phases[index];
   const previous = phases[index - 1];
   const present = new Set(phase.forces.map((f) => f.id));
+  const debut = (id: string) => phases.findIndex((p) => p.forces.some((f) => f.id === id)) === index;
   return {
     phase,
     forces: phase.forces,
-    newForces: phase.forces.filter((f) => phase.added.includes(f.id)),
+    newForces: phase.forces.filter((f) => phase.added.includes(f.id) && debut(f.id)),
     goneForces: previous ? previous.forces.filter((f) => !present.has(f.id)) : [],
   };
 }

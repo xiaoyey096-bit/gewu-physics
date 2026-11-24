@@ -39,21 +39,22 @@ export function drawForces(
   anchors: Record<string, { x: number; y: number }>,
   obstacles: Box[] = [],
 ): void {
-  const { phase } = forceStateOf(result, time);
+  const { phase, newForces } = forceStateOf(result, time);
   if (!phase || !phase.forces.length) return;
+  const freshIds = new Set(newForces.map((f) => f.id));
   const target = Math.min(58, Math.max(30, view.scale * 0.62));
   const sizes = phase.forces.map((f) => f.magnitude).filter((m) => m > 0);
   const ref = sizes.length ? Math.max(...sizes) : 1;
   const limit = { l: 6, r: view.width - 6, t: PAD.top - 16, b: Math.min(view.height - 6, view.oy + 44) };
   const placed: Box[] = obstacles.slice();
   ctx.save();
-  ctx.font = "10px ui-monospace, monospace";
+  ctx.font = "11px ui-monospace, monospace";
   ctx.lineWidth = 2.2;
   for (const f of phase.forces) {
     const at = anchors[f.body];
     if (!at || !result.bodies.some((item) => item.id === f.body)) continue;
-    // 鲜艳色只标「刚出现」的那一小段窗口，阶段播过去之后回落墨色，避免整段动画都染红。
-    const fresh = phase.added.includes(f.id) && time - phase.from <= Math.min(0.6, (phase.to - phase.from) * 0.22);
+    // 鲜艳色只标「第一次登场」的那一小段窗口，且阶段播过去之后回落墨色；回归的力不再重新标色。
+    const fresh = freshIds.has(f.id) && time - phase.from <= Math.min(0.6, (phase.to - phase.from) * 0.22);
     const color = fresh ? palette.fresh : palette.ink;
     const len = ((f.magnitude > 0 ? f.magnitude : ref) / ref) * target;
     const ux = f.dx, uy = -f.dy;
@@ -61,10 +62,6 @@ export function drawForces(
     ctx.save();
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
-    if (fresh) {
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 9;
-    }
     arrow(ctx, at.x, at.y, x1, y1, fresh ? 8 : 7);
     ctx.restore();
     const text = forceLabel(f, result, time);
@@ -96,9 +93,9 @@ export function drawForces(
     }
     placed.push(box);
     ctx.textAlign = align;
-    ctx.font = fresh ? "bold 10px ui-monospace, monospace" : "10px ui-monospace, monospace";
+    ctx.font = fresh ? "bold 11px ui-monospace, monospace" : "11px ui-monospace, monospace";
     label(ctx, text, spot.x, spot.y, color, palette.bg);
-    ctx.font = "10px ui-monospace, monospace";
+    ctx.font = "11px ui-monospace, monospace";
   }
   ctx.restore();
   ctx.textAlign = "left";
@@ -217,9 +214,10 @@ function drawGrid(ctx: CanvasRenderingContext2D, view: SceneView, palette: Palet
 
 function drawHud(ctx: CanvasRenderingContext2D, width: number, lines: string[], palette: Palette) {
   const narrow = width < 560;
-  ctx.font = narrow ? "10px ui-monospace, monospace" : "12px ui-monospace, monospace";
+  const rowH = narrow ? 15 : 18;
+  ctx.font = narrow ? "11px ui-monospace, monospace" : "13px ui-monospace, monospace";
   const boxW = Math.max(...lines.map((line) => ctx.measureText(line).width)) + 18;
-  const boxH = lines.length * (narrow ? 13 : 16) + 10;
+  const boxH = lines.length * rowH + 10;
   ctx.save();
   ctx.globalAlpha = 0.78;
   ctx.fillStyle = palette.surface;
@@ -227,14 +225,15 @@ function drawHud(ctx: CanvasRenderingContext2D, width: number, lines: string[], 
   ctx.fill();
   ctx.restore();
   ctx.fillStyle = palette.fg;
-  lines.forEach((line, i) => ctx.fillText(line, PAD.left + 1, 6 + (narrow ? 14 : 17) + i * (narrow ? 13 : 16)));
+  lines.forEach((line, i) => ctx.fillText(line, PAD.left + 1, 6 + (narrow ? 16 : 19) + i * rowH));
   ctx.font = "11px system-ui, sans-serif";
 }
 
 function drawStatCard(ctx: CanvasRenderingContext2D, width: number, palette: Palette, title: string, rows: [string, string, string?][]) {
   const compact = width < 640;
-  const pw = compact ? 176 : 202;
-  const ph = 26 + rows.length * (compact ? 14 : 16);
+  const rowH = compact ? 15 : 17;
+  const pw = compact ? 188 : 216;
+  const ph = 28 + rows.length * rowH;
   const px = width - PAD.right - pw - 2;
   const py = PAD.top + (compact ? 12 : 16);
   ctx.save();
@@ -250,17 +249,17 @@ function drawStatCard(ctx: CanvasRenderingContext2D, width: number, palette: Pal
   panel(ctx, px, py, pw, ph, 10);
   ctx.stroke();
   ctx.restore();
-  ctx.font = compact ? "9px ui-monospace, monospace" : "10px ui-monospace, monospace";
+  ctx.font = compact ? "10px ui-monospace, monospace" : "11px ui-monospace, monospace";
   ctx.fillStyle = palette.muted;
-  ctx.fillText(title, px + 10, py + 15);
+  ctx.fillText(title, px + 10, py + 16);
   rows.forEach(([name, value, color], i) => {
-    const ry = py + 30 + i * (compact ? 14 : 16);
+    const ry = py + 32 + i * rowH;
     if (color) {
       ctx.fillStyle = color;
-      ctx.fillRect(px + 10, ry - 6, 6, 6);
+      ctx.fillRect(px + 10, ry - 7, compact ? 7 : 8, compact ? 7 : 8);
     }
     ctx.fillStyle = palette.muted;
-    ctx.fillText(name, px + (color ? 20 : 10), ry);
+    ctx.fillText(name, px + (color ? 21 : 10), ry);
     ctx.textAlign = "right";
     ctx.fillStyle = palette.fg;
     ctx.fillText(value, px + pw - 10, ry);

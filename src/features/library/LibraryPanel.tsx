@@ -445,7 +445,7 @@ export function LibraryPanel({ onOpenSession, showProblem = false, onBackToLibra
                       <li key={session.id}>
                         <button
                           type="button"
-                          onClick={() => onOpenSession(session.id, false)}
+                          onClick={() => onOpenSession(session.id, true)}
                           aria-label={`打开题目 ${session.title}`}
                           aria-current={activeSession?.id === session.id ? "true" : undefined}
                           title={`${session.title} · ${agoLabel(session.updatedAt)}打开工作台`}

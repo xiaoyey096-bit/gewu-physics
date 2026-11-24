@@ -7,6 +7,7 @@ const RECENT_ROWS = `${RECENT} ul > li`;
 const RECENT_COUNT = `${RECENT} span.ml-auto`;
 const RECENT_ITEM = `${RECENT} button[aria-label^="打开题目"]`;
 const RECENT_MORE = `${RECENT} button[aria-label="显示更多最近题目"]`;
+const PROBLEM_PANE = 'section[aria-label="题目原文与图片"]';
 const COMPOSE = 'textarea[aria-label="题干或提问输入"]';
 const CONFIRM = 'textarea[aria-label="题目内容（可编辑）"]';
 const STATES = 'div[aria-label="题目临界状态"]';
@@ -160,6 +161,18 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   log("recentTitles", recentTitles);
   await browser.clickSelector(`${RECENT} button[aria-label*="长 10 m"]`);
   await browser.wait(`!!document.querySelector(${JSON.stringify(CANVAS)})`, "工作台已打开", 20000);
+  // 与题库行一致：点「最近」条目直接进入题目界面（左栏换成题面 + 「返回题库」）。
+  const openedProblem = await browser.exists(PROBLEM_PANE);
+  check("点击最近条目直接进入题目界面", openedProblem, openedProblem);
+  await browser.click("返回题库");
+  await browser.wait(`!!document.querySelector(${JSON.stringify(RECENT_ITEM)})`, "最近栏恢复");
+  check("返回题库后最近栏重新可见", await browser.exists(RECENT_ITEM), true);
+  // 条目已经是当前题时，再点一次也要有反应：重新进入题目界面。
+  await browser.clickSelector(`${RECENT} button[aria-label*="长 10 m"]`);
+  const reopened = await browser.exists(PROBLEM_PANE);
+  check("重复点击当前最近条目仍进入题目界面", reopened, reopened);
+  await browser.click("返回题库");
+  await browser.wait(`!!document.querySelector(${JSON.stringify(RECENT_ITEM)})`, "最近栏恢复");
   log("panelState", await browser.evaluate(`(() => ({ innerWidth: window.innerWidth, asides: [...document.querySelectorAll("aside")].map((a) => a.getAttribute("aria-label")), tabs: [...document.querySelectorAll('[role="tab"]')].map((t) => t.textContent.trim()) }))()`));
   await browser.wait(`!!document.querySelector(${JSON.stringify(`${RIGHT} [role="tab"]`)})`, "右侧面板就绪");
 
@@ -185,7 +198,15 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   check("新出现的力标了「新」并用醒目色", states.fresh >= 3, states.fresh);
   await shot("v8-03-states.png");
 
-  // —— 画布：墨色描边 + 新受力红色 ——
+  // —— 画布：默认不叠加受力，定位后才出现；墨色描边 + 新受力红色 ——
+  // 用比醒目色更严的红，避开合速度 #c81e5a 被算成受力箭头。
+  const FRESH_RED = "r > 190 && g < 70 && b < 70 && d[i + 3] > 40";
+  const idleFresh = await pixels(browser, FRESH_RED);
+  const forceToggle = await browser.evaluate(`document.querySelector('button[aria-label="动画受力"]')?.getAttribute("aria-pressed")`);
+  log("idleForces", { idleFresh, forceToggle });
+  check("「动画受力」默认关闭", forceToggle === "false", forceToggle);
+  check("未定位时画布不出现受力箭头", idleFresh < 30, idleFresh);
+
   // 醒目色只标阶段起点附近，先定位到第一个临界状态再取帧，避免动画播过去后测不到。
   await browser.evaluate(`(() => { document.querySelector(${JSON.stringify(STATES)})?.querySelector('button[aria-label^="定位"]')?.click(); })()`);
   await sleep(600);
@@ -210,15 +231,52 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   log("afterSeek", { seekTarget, freshNext, markedStates: afterSeek });
   check("定位到下一临界状态仍有醒目色箭头", freshNext > 40, freshNext);
   check("多个临界阶段都标出新出现的力", afterSeek.length >= 2, afterSeek);
+  // 「新」只属于这个力在整段运动里的第一次登场：消失后又回来的力不能再标一次。
+  // 标签形如「G（v₁ 6）」，两个物体的重力符号都叫 G，所以按「符号 + 速度符号」去重。
+  const debutSymbols = await browser.evaluate(`(() => {
+    const key = (text) => text.split("（")[0] + "（" + (text.split("（")[1] ?? "").split(" ")[0];
+    return [...document.querySelectorAll(${JSON.stringify(`${STATES} span.text-fresh`)})]
+      .map((el) => el.textContent.trim()).filter((text) => text !== "新").map(key);
+  })()`);
+  check("同一个力不会在多个临界状态被标成新出现", debutSymbols.length === new Set(debutSymbols).size, debutSymbols);
   await shot("v8-05-canvas-seek.png");
 
-  // 阶段播过去之后醒目色要退回墨色，否则整段动画都染红就失去「刚出现」的含义。
+  // 打开「动画受力」后拖到阶段中后段：受力仍持续绘制，但醒目色要退回墨色，否则整段动画都染红就失去「刚出现」的含义。
+  // 显示选项在「动画参数」页签里，非当前页签的内容虽然留在 DOM 但不可点，先切过去。
+  await browser.click("动画参数", `${RIGHT} [role="tab"]`);
+  await browser.click("动画受力", 'button[aria-label="动画受力"]');
   await browser.dragSlider("动画时间轴", 0.78);
   await sleep(400);
   const settled = await pixels(browser, FRESH);
-  log("settled", { settled });
-  check("阶段播过后醒目色退回墨色", settled < 120, settled);
+  const settledInk = await pixels(browser, INK);
+  log("settled", { settled, settledInk });
+  check("阶段播过后醒目色退回墨色", settled < 120 && settledInk > 400, { settled, settledInk });
   await shot("v8-06-canvas-settled.png");
+
+  // —— 「状态箭头」：定位时力以外的箭头默认加上，可以整体关掉 ——
+  const setToggle = async (label, want) => {
+    const pressed = await browser.evaluate(`document.querySelector('button[aria-label=${JSON.stringify(label)}]')?.getAttribute("aria-pressed")`);
+    if ((pressed === "true") !== want) await browser.click(label, `button[aria-label="${label}"]`);
+    return want;
+  };
+  const TEAL = "r < 40 && g > 100 && g < 170 && b > 90 && b < 160";
+  await setToggle("速度矢量", false);
+  await setToggle("动画受力", false);
+  await setToggle("状态箭头", true);
+  // 能量条的分量色与水平速度箭头同色，先关掉，免得把条当成箭头。
+  await setToggle("能量", false);
+  // 此刻右栏停在「动画参数」页签，临界状态列表不可点，用脚本触发同一个「定位」按钮。
+  await browser.evaluate(`(() => { const b=[...document.querySelectorAll(${JSON.stringify(`${STATES} button[aria-label^="定位"]`)})][0]; b?.click(); return b?.getAttribute("aria-label") ?? null; })()`);
+  await sleep(400);
+  const withArrows = await pixels(browser, TEAL);
+  const withForces = await pixels(browser, FRESH_RED);
+  await setToggle("状态箭头", false);
+  await sleep(400);
+  const withoutArrows = await pixels(browser, TEAL);
+  const stillForces = await pixels(browser, FRESH_RED);
+  log("stateArrows", { withArrows, withForces, withoutArrows, stillForces });
+  check("定位时默认附带运动方向箭头，关掉后只剩受力", withArrows > 60 && withoutArrows < 20 && stillForces > 100, { withArrows, withoutArrows, stillForces });
+  await shot("v8-07-state-arrows.png");
 
   // —— 斜面题：停下前后摩擦力性质改变 ——
   await browser.clickSelector(`${RECENT} button[aria-label*="倾角 30°"]`);

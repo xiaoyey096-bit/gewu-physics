@@ -22,9 +22,9 @@ export function CriticalPoints({ problem, result, onSeek, onExport, onExportAll 
     <div className="flex flex-col gap-3 p-4" aria-label="题目临界状态">
       <div>
         <h2 className="text-sm font-semibold">对象与临界状态</h2>
-        <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+        <p className="mt-1 text-xs leading-6 text-muted-foreground">
           运动对象：{result.bodies.map((body) => `${body.label}（${body.velocitySymbol}）`).join("、") || "质点"} · {model}
-          <br />凡有新受力出现的时刻都列为临界状态点，「定位」后画布即显示此刻受力，红色为本阶段新出现的力。
+          <br />凡有新受力出现的时刻都列为临界状态点，「定位」后画布即显示此刻受力；只有整段运动中第一次登场的力用红色标出，消失后又回来的力保持墨色。
         </p>
       </div>
 
@@ -33,7 +33,7 @@ export function CriticalPoints({ problem, result, onSeek, onExport, onExportAll 
           <li key={point.id} className="rounded-xl border border-border p-3">
             <button
               type="button"
-              className="w-full rounded text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="w-full rounded text-left text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={`临界状态 ${point.title}`}
               onClick={() => onSeek(point.time)}
               onKeyDown={(event) => {
@@ -46,7 +46,7 @@ export function CriticalPoints({ problem, result, onSeek, onExport, onExportAll 
               <span className="block font-medium">
                 {point.title} · t = {point.time.toFixed(2)} s
               </span>
-              <span className="mt-1 block text-[10px] leading-5 text-muted-foreground">{point.condition}</span>
+              <span className="mt-1 block text-xs leading-6 text-muted-foreground">{point.condition}</span>
             </button>
 
             {point.forces.length > 0 && (
@@ -54,7 +54,7 @@ export function CriticalPoints({ problem, result, onSeek, onExport, onExportAll 
                 {point.forces.map((force) => {
                   const fresh = point.newForces.some((item) => item.id === force.id);
                   return (
-                    <li key={force.id} className="flex items-baseline gap-1.5 text-[10px] leading-5">
+                    <li key={force.id} className="flex items-baseline gap-1.5 text-xs leading-6">
                       <span className={`shrink-0 font-mono ${fresh ? "font-bold text-fresh" : "text-foreground"}`}>{forceLabel(force, result, point.time)}</span>
                       <span className="truncate text-muted-foreground" title={force.formula}>
                         {force.name}
@@ -65,7 +65,7 @@ export function CriticalPoints({ problem, result, onSeek, onExport, onExportAll 
                   );
                 })}
                 {point.goneForces.length > 0 && (
-                  <li className="text-[10px] leading-5 text-muted-foreground">本阶段消失：{point.goneForces.map((force) => force.symbol).join("、")}</li>
+                  <li className="text-xs leading-6 text-muted-foreground">本阶段消失：{point.goneForces.map((force) => force.symbol).join("、")}</li>
                 )}
               </ul>
             )}
@@ -87,7 +87,7 @@ export function CriticalPoints({ problem, result, onSeek, onExport, onExportAll 
         <Camera />
         导出全部临界状态
       </Button>
-      <p className="text-[10px] leading-5 text-muted-foreground">合并为一张 PNG 图版，保留当前显示选项。数值由解析解给出。</p>
+      <p className="text-xs leading-6 text-muted-foreground">合并为一张 PNG 图版，保留当前显示选项。数值由解析解给出。</p>
     </div>
   );
 }
