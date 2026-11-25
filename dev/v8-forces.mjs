@@ -176,7 +176,7 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   const legacyState = await browser.evaluate(`(() => ({
     stored: JSON.parse(localStorage.getItem("gewu-prefs-v2") ?? "null")?.stage?.forces ?? null,
     marker: localStorage.getItem("gewu-forces-default-off-v1"),
-    pressed: document.querySelector('button[aria-label="受力分析"]')?.getAttribute("aria-pressed"),
+    pressed: document.querySelector('div[aria-label="动画控制区"] button[aria-label="受力分析"]')?.getAttribute("aria-pressed"),
   }))()`);
   log("legacyPrefs", legacyState);
   check("老偏好 forces:true 被一次性迁移，受力分析开关为关", legacyState.pressed === "false" && legacyState.stored === true, legacyState);
@@ -221,9 +221,14 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   const locateFirst = () => browser.evaluate(`(() => { const b = document.querySelector(${JSON.stringify(STATES)})?.querySelector('button[aria-label^="定位"]'); b?.click(); return b?.getAttribute("aria-label") ?? null; })()`);
 
   const idleFresh = await pixels(browser, FRESH_RED);
-  const forceToggle = await browser.evaluate(`document.querySelector('button[aria-label="受力分析"]')?.getAttribute("aria-pressed")`);
-  log("idleForces", { idleFresh, forceToggle });
-  check("「受力分析」默认关闭", forceToggle === "false", forceToggle);
+  const DECK_FORCE = 'div[aria-label="动画控制区"] button[aria-label="受力分析"]';
+  const RIGHT_FORCE = `${RIGHT} button[aria-label="受力分析"]`;
+  const idleToggles = await browser.evaluate(`(() => ({
+    deck: document.querySelector(${JSON.stringify(DECK_FORCE)})?.getAttribute("aria-pressed") ?? null,
+    panel: document.querySelector(${JSON.stringify(RIGHT_FORCE)})?.getAttribute("aria-pressed") ?? null,
+  }))()`);
+  log("idleForces", { idleFresh, ...idleToggles });
+  check("控制条与右栏都有「受力分析」，且默认关闭", idleToggles.deck === "false" && idleToggles.panel === "false", idleToggles);
   check("默认画布不出现受力箭头", idleFresh < 30, idleFresh);
 
   // 定位只把画面停在该时刻：物体描边还在，但不画受力。
@@ -236,11 +241,15 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   check("未打开受力分析时，定位也不画受力箭头", locateFresh < 30, locateFresh);
   await shot("v8-04-canvas-locate-no-forces.png");
 
-  // 打开「受力分析」后，同一个临界状态才画出新登场的受力箭头。
-  await browser.click("动画参数", `${RIGHT} [role="tab"]`);
-  await browser.click("受力分析", 'button[aria-label="受力分析"]');
-  await browser.click("对象与受力", `${RIGHT} [role="tab"]`);
-  await browser.wait(`!!document.querySelector(${JSON.stringify(STATE_ITEMS)})`, "临界状态列表就绪");
+  // 控制条上的「受力分析」直接叠加受力，不必先切右栏页签；两处开关共用同一份偏好，状态要同步。
+  await browser.click("受力分析", DECK_FORCE);
+  await browser.wait(`document.querySelector(${JSON.stringify(DECK_FORCE)})?.getAttribute("aria-pressed") === "true"`, "控制条受力开关已按下");
+  const synced = await browser.evaluate(`(() => ({
+    deck: document.querySelector(${JSON.stringify(DECK_FORCE)})?.getAttribute("aria-pressed"),
+    panel: document.querySelector(${JSON.stringify(RIGHT_FORCE)})?.getAttribute("aria-pressed"),
+  }))()`);
+  log("deckToggleSync", synced);
+  check("控制条打开受力后，右栏「受力分析」同步为开", synced.deck === "true" && synced.panel === "true", synced);
   await locateFirst();
   await sleep(600);
   const freshStart = await pixels(browser, FRESH_RED);
@@ -283,8 +292,9 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
 
   // —— 「状态箭头」只管定位时的速度箭头，受力归「受力分析」单独控制 ——
   const setToggle = async (label, want) => {
-    const pressed = await browser.evaluate(`document.querySelector('button[aria-label=${JSON.stringify(label)}]')?.getAttribute("aria-pressed")`);
-    if ((pressed === "true") !== want) await browser.click(label, `button[aria-label="${label}"]`);
+    const sel = `${RIGHT} button[aria-label="${label}"]`;
+    const pressed = await browser.evaluate(`document.querySelector(${JSON.stringify(sel)})?.getAttribute("aria-pressed")`);
+    if ((pressed === "true") !== want) await browser.click(label, sel);
     return want;
   };
   // 显示选项在「动画参数」页签里，非当前页签的内容虽然留在 DOM 但不可点，先切过去。
@@ -314,6 +324,37 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   check("关掉受力分析后定位只剩运动要素", plainArrows < 20 && plainForces < 30, { plainArrows, plainForces });
   await shot("v8-07-state-arrows.png");
 
+  // —— 光滑地面板块题：木板从 t=0 就以 1 m/s² 加速，早期读数不能因为箭头短就整条不画 ——
+  await setToggle("速度矢量", true);
+  await setToggle("关键点", false);
+  await browser.clickSelector(`${RECENT} button[aria-label*="长 7 m"]`);
+  await browser.wait(`!!document.querySelector(${JSON.stringify(CANVAS)})`, "光滑地面板块题就绪", 20000);
+  const clockText = () => browser.evaluate(`(() => {
+    const el = [...document.querySelectorAll("span")].find((e) => /^[0-9]+\\.[0-9]{2} \\/ [0-9]+\\.[0-9]{2} s$/.test(e.textContent.trim()));
+    return el ? el.textContent.trim().split(" / ").map((x) => parseFloat(x)) : null;
+  })()`);
+  const boardTotal = (await clockText())?.[1] ?? 0;
+  log("boardDuration", boardTotal);
+  await browser.dragSlider("动画时间轴", boardTotal > 0 ? 0.2 / boardTotal : 0);
+  await sleep(400);
+  const INFO_BLUE = "r > 30 && r < 80 && g > 85 && g < 140 && b > 200 && d[i + 3] > 40";
+  const earlyClock = await clockText();
+  const earlyBoard = await pixels(browser, INFO_BLUE);
+  log("earlyBoardLabel", { earlyClock, earlyBoard });
+  check("木板 t<0.5 s 已画出 v₂ 读数与方向", (earlyClock?.[0] ?? 9) < 0.5 && earlyBoard > 20, { earlyClock, earlyBoard });
+  await shot("v8-08-early-v2.png");
+  await browser.dragSlider("动画时间轴", 0);
+  await sleep(400);
+  // 阶段按钮把画面精确带回 t = 0.00，此时木板速度为 0，不该画出方向。
+  await browser.click("开始相对滑动", 'div[aria-label="动画过程阶段"] button');
+  await sleep(400);
+  const zeroClock = await clockText();
+  const zeroBoard = await pixels(browser, INFO_BLUE);
+  log("boardAtZero", { zeroClock, zeroBoard });
+  check("回到 t=0.00 木板速度为 0 时不画 v₂ 方向", zeroClock?.[0] === 0 && zeroBoard < 5, { zeroClock, zeroBoard });
+  await browser.click("返回题库");
+  await browser.wait(`!!document.querySelector(${JSON.stringify(RECENT_ITEM)})`, "最近栏恢复");
+
   // —— 斜面题：停下前后摩擦力性质改变 ——
   await browser.clickSelector(`${RECENT} button[aria-label*="倾角 30°"]`);
   await browser.wait(`!!document.querySelector(${JSON.stringify(STATE_ITEMS)})`, "斜面临界状态就绪", 20000);
@@ -333,9 +374,9 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   await browser.wait(`!!document.querySelector('button[aria-label="受力分析"]')`, "刷新后显示选项就绪", 20000);
   const afterReload = await browser.evaluate(`(() => ({
     marker: localStorage.getItem("gewu-forces-default-off-v1"),
-    pressed: document.querySelector('button[aria-label="受力分析"]')?.getAttribute("aria-pressed"),
+    pressed: document.querySelector('div[aria-label="动画控制区"] button[aria-label="受力分析"]')?.getAttribute("aria-pressed"),
   }))()`);
   log("afterReload", afterReload);
   check("刷新后用户显式打开的受力分析保持打开", afterReload.pressed === "true" && afterReload.marker === "1", afterReload);
-  await shot("v8-08-prefs-migration.png");
+  await shot("v8-09-prefs-migration.png");
 });

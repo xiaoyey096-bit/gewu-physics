@@ -276,7 +276,7 @@ export function Workspace({ configured, onNewProblem, onHome, onOpenSession, sho
       {exploring && <p className="text-xs text-vy">当前为参数探究：动画与题解使用右侧参数，原题干保持不变。</p>}
       <section className="min-w-0 rounded-2xl border border-border bg-card p-3 sm:p-4" aria-label="动画演示">
         <div className="mb-3 flex items-center gap-3"><span className="font-mono text-xs text-muted-foreground">01</span><h2 className="text-sm font-semibold">动画演示</h2><span className="ml-auto text-[10px] text-muted-foreground">先观察，再推导</span></div>
-        <StageView problem={problem} result={result} params={liveParams} options={prefs.stage} speed={prefs.speed} onSpeed={onSpeed} loop={prefs.loop} onLoop={onLoop} phases={phases} activePhase={activePhase} onPhaseChange={onPhaseChange} apiRef={stageApi} onExportSolution={exportSolution} compact={bp.mobile} />
+        <StageView problem={problem} result={result} params={liveParams} options={prefs.stage} onOptions={onOptions} speed={prefs.speed} onSpeed={onSpeed} loop={prefs.loop} onLoop={onLoop} phases={phases} activePhase={activePhase} onPhaseChange={onPhaseChange} apiRef={stageApi} onExportSolution={exportSolution} compact={bp.mobile} />
       </section>
       <InsightPanel problem={problem} result={result} onExportSolution={exportSolution} solutionEdits={session.solutionEdits} onSaveSolution={saveSolution} />
       <p className="pb-3 text-center text-[10px] text-muted-foreground">理想模型 · 忽略空气阻力 · 动画与题解使用同一解析解</p>

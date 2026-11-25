@@ -21,6 +21,8 @@ interface Props {
   phases: Phase[];
   activePhase: number;
   onSeekPhase: (index: number) => void;
+  forces: boolean;
+  onForces: (b: boolean) => void;
   onExportPng: () => void;
   onExportSolution: () => void;
   videoExport: ReactNode;
@@ -31,6 +33,7 @@ export function ControlDeck(props: Props) {
     time, duration, playing, onPlayPause, onReplay, onScrub,
     speed, onSpeed, loop, onLoop,
     phases, activePhase, onSeekPhase,
+    forces, onForces,
     onExportPng, onExportSolution,
   } = props;
   const atEnd = duration > 0 && time >= duration - 1e-6;
@@ -53,6 +56,17 @@ export function ControlDeck(props: Props) {
           aria-label="循环播放"
         >
           <Repeat /> 循环
+        </Toggle>
+        <Toggle
+          variant="outline"
+          size="sm"
+          className="h-8 px-2 text-[11px] data-[state=on]:border-muted-foreground/50 data-[state=on]:bg-muted data-[state=on]:text-foreground"
+          pressed={forces}
+          onPressedChange={onForces}
+          aria-label="受力分析"
+          title="在画布上叠加受力箭头，播放过程与「定位」都按时刻变化；默认关闭，画面只保留运动方向"
+        >
+          受力分析
         </Toggle>
         <ToggleGroup
           type="single"

@@ -303,15 +303,19 @@ function bodyAt(
 function velocityArrow(ctx: CanvasRenderingContext2D, x: number, y: number, vx: number, vy: number, scale: number, color: string, text: string, halo = "#ffffff") {
   const k = Math.min(16, Math.max(6, scale * 0.16));
   const dx = vx * k, dy = -vy * k;
-  if (Math.hypot(dx, dy) < 8) return;
+  const len = Math.hypot(dx, dy);
+  // 真正静止才不画方向；缓慢加速的对象（如板块模型里的木板）不能因为箭头短就连读数一起藏起来。
+  if (len < 0.8) return;
   ctx.save();
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
   ctx.lineWidth = 1.8;
   arrow(ctx, x, y, x + dx, y + dy);
   ctx.restore();
-  ctx.textAlign = dx >= 0 ? "left" : "right";
-  label(ctx, text, x + dx + (dx >= 0 ? 5 : -5), y + dy - 5, color, halo);
+  const ux = dx / len, uy = dy / len;
+  const reach = Math.max(len, 12);
+  ctx.textAlign = ux >= 0 ? "left" : "right";
+  label(ctx, text, x + ux * reach + (ux >= 0 ? 5 : -5), y + uy * reach - 5, color, halo);
   ctx.textAlign = "left";
 }
 

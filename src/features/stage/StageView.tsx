@@ -19,6 +19,7 @@ interface Props {
   result: SolveResult;
   params: ProblemParams;
   options: StageOptions;
+  onOptions: (patch: Partial<StageOptions>) => void;
   speed: number;
   onSpeed: (s: number) => void;
   loop: boolean;
@@ -33,7 +34,7 @@ interface Props {
 
 export function StageView(props: Props) {
   const {
-    problem, result, params, options,
+    problem, result, params, options, onOptions,
     speed, onSpeed, loop, onLoop, phases, activePhase, onPhaseChange,
     apiRef, onExportSolution, compact,
   } = props;
@@ -333,6 +334,8 @@ export function StageView(props: Props) {
         phases={phases}
         activePhase={activePhase}
         onSeekPhase={(i) => { pause(); seek(phases[i].seek); }}
+        forces={options.forces}
+        onForces={(b) => onOptions({ forces: b })}
         onExportPng={() => exportPng()}
         onExportSolution={onExportSolution}
         videoExport={<VideoExport problem={problem} result={result} palette={palette} options={options} speed={speed} />}
