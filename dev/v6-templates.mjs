@@ -17,21 +17,27 @@ const cases = [
     key: "projectile", match: "无人机", label: "平抛 · h₀=20", aria: "抛体运动动画",
     expectNumbers: [2.02, 24.24],
     expectSliders: ["初速度 v₀", "抛射角 θ", "初始高度 h₀", "重力加速度 g"],
+    expectApprox: true, // 开方出来的飞行时间确实被截断过，这里 ≈ 该留着
   },
   {
     key: "incline", match: "倾角 37°", label: "斜面 · 37° μ=0.5", aria: "斜面下滑动画",
     expectNumbers: [2.025, 1.988, 4.025, 31.945],
     expectSliders: ["物块质量 m", "斜面倾角 θ", "动摩擦因数 μ", "斜面长度 L", "初速度 v₀", "重力加速度 g"],
+    expectApprox: true, // sin37°、cos37° 是无理数，N 与 a 只能写约等号
   },
   {
     key: "blockBoard", match: "长 7 m", label: "滑块木板 · v₀=6", aria: "滑块与木板动画",
     expectNumbers: [2, 2, 6, 12],
     expectSliders: ["滑块初速度 v₀", "滑块质量 m", "木板质量 M", "木板长度 L", "动摩擦因数 μ", "地面摩擦因数 μ′", "重力加速度 g"],
+    expectExact: ["a_1 = -\\mu g = -2", "a_2 = \\frac{\\mu mg}{M} = 1", "Q = \\mu mg\\Delta s = 12"],
+    noApprox: true, // g 取 10、μ 取 0.4 时这些数全都能除尽，题解里不该出现 ≈
   },
   {
     key: "collision", match: "光滑水平面上", label: "弹性碰撞 · 1 kg / 2 kg", aria: "一维碰撞动画",
     expectNumbers: [-1, 2, 3],
     expectSliders: ["A 球质量 m₁", "B 球质量 m₂", "A 球初速度 v₁", "B 球初速度 v₂", "恢复系数 e"],
+    expectExact: ["v_1' = -1", "v_2' = 2"],
+    noApprox: true,
   },
 ];
 
@@ -80,6 +86,14 @@ await runProbe("v6-templates", { port: 9335, width: 1440, height: 900 }, async (
     const nums = (source.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
     const missing = item.expectNumbers.filter((v) => !nums.some((n) => Math.abs(n - v) <= 0.05));
     check(`${item.key}SolutionNumbers`, missing.length === 0, { missing, count: nums.length, sample: source.slice(0, 260) });
+
+    // 题解里的关系符号：能除尽的写 = ，真被截断的才写 ≈（≈ 后面必然带小数位）。
+    const missingExact = (item.expectExact ?? []).filter((want) => !source.includes(want));
+    check(`${item.key}ExactEqualsShown`, missingExact.length === 0, { missingExact, sample: source.slice(0, 320) });
+    const approxSites = source.match(/\\approx\s-?[\d.]+/g) || [];
+    check(`${item.key}ApproxCarriesDecimals`, approxSites.every((s) => /\d\.\d/.test(s)), approxSites.slice(0, 6));
+    if (item.expectApprox) check(`${item.key}RoundedKeepsApprox`, approxSites.length > 0, source.slice(0, 320));
+    if (item.noApprox) check(`${item.key}ExactDataNoApprox`, approxSites.length === 0, approxSites.slice(0, 6));
 
     // 受力分析：每个题型都要列出临界状态与受力
     const forces = await browser.evaluate(`(() => {

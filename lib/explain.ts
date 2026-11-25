@@ -11,6 +11,13 @@ import { templateLabel, templateMeta } from "./templates";
 
 const f = (x: number, d = 2): string => Number(x.toFixed(d)).toString();
 
+/** 题目给的数往往能除尽（g 取 10、μ 取 0.4），那时该写等号；只有真被四舍五入截断过才写约等号。 */
+const rounded = (x: number, d = 2): boolean => Math.abs(x - Number(x.toFixed(d))) > Math.abs(x) * 1e-9 + 1e-12;
+const eq = (x: number, d = 2): string => {
+  const fixed = x.toFixed(d).replace(/^-0(\.0+)$/, "0$1");
+  return rounded(x, d) ? `\\approx ${fixed}` : `= ${Number(fixed)}`;
+};
+
 interface Ctx {
   problem: Problem;
   result: ProjectileResult;
@@ -379,25 +386,25 @@ export function buildExamSolution(problem: Problem, result: SolveResult): string
   const lines = [
     "解",
     "忽略空气阻力，取落地平面为 $y = 0$，竖直向上为正。",
-    ...(need.range ? [math(String.raw`v_{0x} = v_0 \cos\theta \approx ${f(c.v0x)}\,\mathrm{m/s}`)] : []),
-    ...(need.flightTime || need.maxHeight || need.apexTime ? [math(String.raw`v_{0y} = v_0 \sin\theta \approx ${f(c.v0y)}\,\mathrm{m/s}`)] : []),
+    ...(need.range ? [math(String.raw`v_{0x} = v_0 \cos\theta ${eq(c.v0x)}\,\mathrm{m/s}`)] : []),
+    ...(need.flightTime || need.maxHeight || need.apexTime ? [math(String.raw`v_{0y} = v_0 \sin\theta ${eq(c.v0y)}\,\mathrm{m/s}`)] : []),
   ];
-  if (need.apexTime) lines.push(math(String.raw`t_1 = \frac{v_{0y}}{g} \approx ${f(r.apexTime)}\,\mathrm{s}`));
+  if (need.apexTime) lines.push(math(String.raw`t_1 = \frac{v_{0y}}{g} ${eq(r.apexTime)}\,\mathrm{s}`));
   if (need.maxHeight) {
-    lines.push("相对落地平面的最大高度：", math(String.raw`H = h_0 + \frac{v_{0y}^{2}}{2g} \approx ${f(r.maxHeight)}\,\mathrm{m}`));
+    lines.push("相对落地平面的最大高度：", math(String.raw`H = h_0 + \frac{v_{0y}^{2}}{2g} ${eq(r.maxHeight)}\,\mathrm{m}`));
   }
   if (need.flightTime) {
     lines.push(
       String.raw`落地时 $h_0 + v_{0y}T - \frac{1}{2}gT^2 = 0$，取非负的落地时刻：`,
-      math(String.raw`T = \frac{v_{0y} + \sqrt{v_{0y}^{2} + 2gh_0}}{g} \approx ${f(r.flightTime)}\,\mathrm{s}`),
+      math(String.raw`T = \frac{v_{0y} + \sqrt{v_{0y}^{2} + 2gh_0}}{g} ${eq(r.flightTime)}\,\mathrm{s}`),
     );
     if (r.flightTime === 0) lines.push("初始已在落地平面且无向上的初速度，故 $T = 0$。");
   }
-  if (need.range) lines.push(math(String.raw`X = v_{0x}T \approx ${f(r.range)}\,\mathrm{m}`));
+  if (need.range) lines.push(math(String.raw`X = v_{0x}T ${eq(r.range)}\,\mathrm{m}`));
   if (need.landingSpeed) {
     lines.push(
       String.raw`由机械能守恒 $\frac{1}{2}mv^2 = \frac{1}{2}mv_0^2 + mgh_0$，`,
-      math(String.raw`v = \sqrt{v_0^2 + 2gh_0} \approx ${f(c.landingSpeed)}\,\mathrm{m/s}`),
+      math(String.raw`v = \sqrt{v_0^2 + 2gh_0} ${eq(c.landingSpeed)}\,\mathrm{m/s}`),
     );
   }
   lines.push(solutionAnswer(c));
@@ -417,8 +424,8 @@ export function buildDetailedSolution(problem: Problem, result: SolveResult): st
     "① 分解运动法",
     "解",
     "忽略空气阻力，取落地平面为 $y = 0$，竖直向上为正；物体的加速度 $a_x = 0$，$a_y = -g$。",
-    ...(need.range || need.landingSpeed ? [math(String.raw`v_{0x} = v_0 \cos\theta \approx ${f(c.v0x)}\,\mathrm{m/s}`)] : []),
-    ...(motionTime || need.maxHeight || need.apexTime ? [math(String.raw`v_{0y} = v_0 \sin\theta \approx ${f(c.v0y)}\,\mathrm{m/s}`)] : []),
+    ...(need.range || need.landingSpeed ? [math(String.raw`v_{0x} = v_0 \cos\theta ${eq(c.v0x)}\,\mathrm{m/s}`)] : []),
+    ...(motionTime || need.maxHeight || need.apexTime ? [math(String.raw`v_{0y} = v_0 \sin\theta ${eq(c.v0y)}\,\mathrm{m/s}`)] : []),
   ];
   if (need.range) first.push("水平方向做匀速运动：$x = v_{0x}t$。");
   if (motionTime || need.maxHeight || need.apexTime) {
@@ -428,24 +435,24 @@ export function buildDetailedSolution(problem: Problem, result: SolveResult): st
     );
   }
   if (need.maxHeight || need.apexTime) {
-    first.push("最高点 $v_y = 0$，", math(String.raw`t_1 = \frac{v_{0y}}{g} \approx ${f(r.apexTime)}\,\mathrm{s}`));
+    first.push("最高点 $v_y = 0$，", math(String.raw`t_1 = \frac{v_{0y}}{g} ${eq(r.apexTime)}\,\mathrm{s}`));
   }
   if (need.maxHeight) {
-    first.push("代入位置方程，得到相对落地平面的最大高度：", math(String.raw`H = y(t_1) = h_0 + \frac{v_{0y}^{2}}{2g} \approx ${f(r.maxHeight)}\,\mathrm{m}`));
+    first.push("代入位置方程，得到相对落地平面的最大高度：", math(String.raw`H = y(t_1) = h_0 + \frac{v_{0y}^{2}}{2g} ${eq(r.maxHeight)}\,\mathrm{m}`));
   }
   if (motionTime) {
     first.push(
       String.raw`落地时 $y(T) = 0$，即 $h_0 + v_{0y}T - \frac{1}{2}gT^2 = 0$，取非负的落地时刻：`,
-      math(String.raw`T = \frac{v_{0y} + \sqrt{v_{0y}^{2} + 2gh_0}}{g} \approx ${f(r.flightTime)}\,\mathrm{s}`),
+      math(String.raw`T = \frac{v_{0y} + \sqrt{v_{0y}^{2} + 2gh_0}}{g} ${eq(r.flightTime)}\,\mathrm{s}`),
     );
     if (r.flightTime === 0) first.push("本题物体初始已在落地平面且无向上的初速度，故 $T = 0$。");
   }
-  if (need.range) first.push(math(String.raw`X = v_{0x}T \approx ${f(r.range)}\,\mathrm{m}`));
+  if (need.range) first.push(math(String.raw`X = v_{0x}T ${eq(r.range)}\,\mathrm{m}`));
   if (need.landingSpeed) {
     first.push(
       "落地速度由水平、竖直分量合成：",
-      math(String.raw`v_y(T) = v_{0y} - gT = -\sqrt{v_{0y}^{2} + 2gh_0} \approx ${f(c.landingVy)}\,\mathrm{m/s}`),
-      math(String.raw`v = \sqrt{v_{0x}^{2} + v_y(T)^2} \approx ${f(c.landingSpeed)}\,\mathrm{m/s}`),
+      math(String.raw`v_y(T) = v_{0y} - gT = -\sqrt{v_{0y}^{2} + 2gh_0} ${eq(c.landingVy)}\,\mathrm{m/s}`),
+      math(String.raw`v = \sqrt{v_{0x}^{2} + v_y(T)^2} ${eq(c.landingSpeed)}\,\mathrm{m/s}`),
     );
   }
   first.push(solutionAnswer(c));
@@ -454,39 +461,39 @@ export function buildDetailedSolution(problem: Problem, result: SolveResult): st
     "② 能量与分段运动法",
     "解",
     "忽略空气阻力，以落地平面为重力势能零点。",
-    ...(need.range ? [math(String.raw`v_{0x} = v_0 \cos\theta \approx ${f(c.v0x)}\,\mathrm{m/s}`)] : []),
-    ...(need.flightTime || need.maxHeight || need.apexTime ? [math(String.raw`v_{0y} = v_0 \sin\theta \approx ${f(c.v0y)}\,\mathrm{m/s}`)] : []),
+    ...(need.range ? [math(String.raw`v_{0x} = v_0 \cos\theta ${eq(c.v0x)}\,\mathrm{m/s}`)] : []),
+    ...(need.flightTime || need.maxHeight || need.apexTime ? [math(String.raw`v_{0y} = v_0 \sin\theta ${eq(c.v0y)}\,\mathrm{m/s}`)] : []),
   ];
   if (need.maxHeight || need.flightTime || need.apexTime) {
     second.push(
       "$H$ 表示相对落地平面的最大高度。从抛出点至最高点，水平方向动能不变，竖直分运动满足：",
       math(String.raw`\frac{1}{2}mv_{0y}^{2} = mg(H - h_0)`),
-      math(String.raw`H = h_0 + \frac{v_{0y}^{2}}{2g} \approx ${f(r.maxHeight)}\,\mathrm{m}`),
+      math(String.raw`H = h_0 + \frac{v_{0y}^{2}}{2g} ${eq(r.maxHeight)}\,\mathrm{m}`),
     );
   }
   if (need.apexTime || need.flightTime) {
     second.push(
       String.raw`上升段末竖直速度为 $0$，由匀减速运动关系 $H - h_0 = \frac{1}{2}gt_1^2$ 得：`,
-      math(String.raw`t_1 = \sqrt{\frac{2(H - h_0)}{g}} = \frac{v_{0y}}{g} \approx ${f(r.apexTime)}\,\mathrm{s}`),
+      math(String.raw`t_1 = \sqrt{\frac{2(H - h_0)}{g}} = \frac{v_{0y}}{g} ${eq(r.apexTime)}\,\mathrm{s}`),
     );
   }
   if (need.flightTime) {
     const fallTime = Math.sqrt((2 * r.maxHeight) / params.g);
     second.push(
       String.raw`从最高点下落，竖直初速度为 $0$，由 $H = \frac{1}{2}gt_2^2$ 得：`,
-      math(String.raw`t_2 = \sqrt{\frac{2H}{g}} \approx ${f(fallTime)}\,\mathrm{s}`),
-      math(String.raw`T = t_1 + t_2 \approx ${f(r.flightTime)}\,\mathrm{s}`),
+      math(String.raw`t_2 = \sqrt{\frac{2H}{g}} ${eq(fallTime)}\,\mathrm{s}`),
+      math(String.raw`T = t_1 + t_2 ${eq(r.flightTime)}\,\mathrm{s}`),
     );
     if (r.flightTime === 0) second.push("本题 $H = 0$ 且 $v_{0y} = 0$，故 $t_1 = t_2 = T = 0$。");
   }
   if (need.range) {
-    second.push("水平方向匀速，故射程为：", math(String.raw`X = v_{0x}T \approx ${f(r.range)}\,\mathrm{m}`));
+    second.push("水平方向匀速，故射程为：", math(String.raw`X = v_{0x}T ${eq(r.range)}\,\mathrm{m}`));
   }
   if (need.landingSpeed) {
     second.push(
       "从抛出点到落地，机械能守恒：",
       math(String.raw`\frac{1}{2}mv^2 = \frac{1}{2}mv_0^2 + mgh_0`),
-      math(String.raw`v = \sqrt{v_0^2 + 2gh_0} \approx ${f(c.landingSpeed)}\,\mathrm{m/s}`),
+      math(String.raw`v = \sqrt{v_0^2 + 2gh_0} ${eq(c.landingSpeed)}\,\mathrm{m/s}`),
     );
   }
   second.push(solutionAnswer(c));
@@ -522,7 +529,7 @@ export function solutionMarkdown(
     lines.push(`- **${p.symbol} ${p.label}**：${p.meaning} 当前 ${p.current}。${p.effect}`);
   });
   lines.push("", "## 过程讲解");
-  explanation.phases.forEach((p) => lines.push(`- **${p.title}**（t ≈ ${f(p.seek)} s）：${p.text}`));
+  explanation.phases.forEach((p) => lines.push(`- **${p.title}**（t ${rounded(p.seek) ? "≈" : "="} ${f(p.seek)} s）：${p.text}`));
   if (questions.length) {
     lines.push("", "## 答疑");
     explanation.qa.forEach((item) => {
@@ -663,11 +670,11 @@ function buildMultiExamSolution(problem: Problem, result: SolveResult): string {
     const r = result;
     const ask = multiNeed(problem);
     const rad = p.angleDeg * Math.PI / 180;
-    const lines = ["解", "以沿斜面向下为正方向。垂直斜面方向受力平衡：", math(`N = mg\\cos\\theta \\approx ${f(r.normal)}\\,\\mathrm{N}`), "沿斜面方向：", math(`mg\\sin\\theta - \\mu mg\\cos\\theta = ma`), math(`a = g(\\sin\\theta - \\mu\\cos\\theta) \\approx ${f(r.a)}\\,\\mathrm{m/s^2}`)];
-    if (ask.has("time")) lines.push(r.reachedBottom ? "由 $L = v_0t + \\frac{1}{2}at^2$ 取正根：" : "由 $v = v_0 + at = 0$：", math(`t \\approx ${f(r.t)}\\,\\mathrm{s}`));
-    if (ask.has("speed")) lines.push("由速度—位移关系：", math(`v = \\sqrt{v_0^2 + 2aL} \\approx ${f(r.vEnd)}\\,\\mathrm{m/s}`));
-    if (ask.has("heat")) lines.push("摩擦生热等于摩擦力乘以滑行距离：", math(`Q = \\mu mg\\cos\\theta \\cdot s \\approx ${f(r.heat)}\\,\\mathrm{J}`));
-    if (ask.has("workG")) lines.push("重力做功：", math(`W_G = mgh = mgs\\sin\\theta \\approx ${f(r.Wg)}\\,\\mathrm{J}`));
+    const lines = ["解", "以沿斜面向下为正方向。垂直斜面方向受力平衡：", math(`N = mg\\cos\\theta ${eq(r.normal)}\\,\\mathrm{N}`), "沿斜面方向：", math(`mg\\sin\\theta - \\mu mg\\cos\\theta = ma`), math(`a = g(\\sin\\theta - \\mu\\cos\\theta) ${eq(r.a)}\\,\\mathrm{m/s^2}`)];
+    if (ask.has("time")) lines.push(r.reachedBottom ? "由 $L = v_0t + \\frac{1}{2}at^2$ 取正根：" : "由 $v = v_0 + at = 0$：", math(`t ${eq(r.t)}\\,\\mathrm{s}`));
+    if (ask.has("speed")) lines.push("由速度—位移关系：", math(`v = \\sqrt{v_0^2 + 2aL} ${eq(r.vEnd)}\\,\\mathrm{m/s}`));
+    if (ask.has("heat")) lines.push("摩擦生热等于摩擦力乘以滑行距离：", math(`Q = \\mu mg\\cos\\theta \\cdot s ${eq(r.heat)}\\,\\mathrm{J}`));
+    if (ask.has("workG")) lines.push("重力做功：", math(`W_G = mgh = mgs\\sin\\theta ${eq(r.Wg)}\\,\\mathrm{J}`));
     const answers = [
       ask.has("acceleration") ? `加速度为 ${f(r.a)} m/s²` : "",
       ask.has("time") ? `滑行时间为 ${f(r.t)} s` : "",
@@ -685,15 +692,15 @@ function buildMultiExamSolution(problem: Problem, result: SolveResult): string {
     const lines = [
       "解",
       "滑块受向左的滑动摩擦力，木板受向右的滑动摩擦力：",
-      math(`a_1 = -\\mu g \\approx ${f(-p.mu * p.g)}\\,\\mathrm{m/s^2},\\qquad a_2 = \\frac{\\mu mg}{M} \\approx ${f((p.mu * p.m * p.g) / p.M)}\\,\\mathrm{m/s^2}`),
+      math(`a_1 = -\\mu g ${eq(-p.mu * p.g)}\\,\\mathrm{m/s^2},\\qquad a_2 = \\frac{\\mu mg}{M} ${eq((p.mu * p.m * p.g) / p.M)}\\,\\mathrm{m/s^2}`),
       r.slidOff ? "滑块从右端滑离时，相对位移等于板长：" : "达到共同速度时，两者速度相等：",
       r.slidOff
-        ? math(`L = v_0t - \\frac{1}{2}\\mu g\\left(1 + \\frac{m}{M}\\right)t^2 \\implies t \\approx ${f(r.t)}\\,\\mathrm{s}`)
-        : math(`v_0 + a_1t = a_2t \\implies t = \\frac{v_0}{\\mu g(1 + m/M)} \\approx ${f(r.t)}\\,\\mathrm{s}`),
+        ? math(`L = v_0t - \\frac{1}{2}\\mu g\\left(1 + \\frac{m}{M}\\right)t^2 \\implies t ${eq(r.t)}\\,\\mathrm{s}`)
+        : math(`v_0 + a_1t = a_2t \\implies t = \\frac{v_0}{\\mu g(1 + m/M)} ${eq(r.t)}\\,\\mathrm{s}`),
     ];
-    if (ask.has("speed")) lines.push(r.slidOff ? "此时两物体速度分别为：" : "共同速度由动量守恒直接得到：", math(r.slidOff ? `v_1 \\approx ${f(r.vBlockEnd)}\\,\\mathrm{m/s},\\qquad v_2 \\approx ${f(r.vBoardEnd)}\\,\\mathrm{m/s}` : `v = \\frac{mv_0}{m + M} \\approx ${f(r.vCommon)}\\,\\mathrm{m/s}`));
-    if (ask.has("slip")) lines.push("相对位移：", math(`\\Delta s = v_0t + \\frac{1}{2}a_1t^2 - \\frac{1}{2}a_2t^2 \\approx ${f(r.slip)}\\,\\mathrm{m}`));
-    if (ask.has("heat")) lines.push("摩擦生热等于摩擦力乘以相对位移：", math(`Q = \\mu mg\\Delta s \\approx ${f(r.heat)}\\,\\mathrm{J}`));
+    if (ask.has("speed")) lines.push(r.slidOff ? "此时两物体速度分别为：" : "共同速度由动量守恒直接得到：", math(r.slidOff ? `v_1 ${eq(r.vBlockEnd)}\\,\\mathrm{m/s},\\qquad v_2 ${eq(r.vBoardEnd)}\\,\\mathrm{m/s}` : `v = \\frac{mv_0}{m + M} ${eq(r.vCommon)}\\,\\mathrm{m/s}`));
+    if (ask.has("slip")) lines.push("相对位移：", math(`\\Delta s = v_0t + \\frac{1}{2}a_1t^2 - \\frac{1}{2}a_2t^2 ${eq(r.slip)}\\,\\mathrm{m}`));
+    if (ask.has("heat")) lines.push("摩擦生热等于摩擦力乘以相对位移：", math(`Q = \\mu mg\\Delta s ${eq(r.heat)}\\,\\mathrm{J}`));
     const answers = [
       ask.has("time") ? `${r.slidOff ? "滑离" : "共速"}时间为 ${f(r.t)} s` : "",
       ask.has("speed") ? `${r.slidOff ? "滑块末速度" : "共同速度为"} ${f(r.slidOff ? r.vBlockEnd : r.vCommon)} m/s` : "",
@@ -713,9 +720,9 @@ function buildMultiExamSolution(problem: Problem, result: SolveResult): string {
     "恢复系数关系：",
     math(`e = \\frac{v_2' - v_1'}{v_1 - v_2} = ${f(p.e)}`),
     "解得：",
-    math(`v_1' \\approx ${f(r.v1After)}\\,\\mathrm{m/s},\\qquad v_2' \\approx ${f(r.v2After)}\\,\\mathrm{m/s}`),
+    math(`v_1' ${eq(r.v1After)}\\,\\mathrm{m/s},\\qquad v_2' ${eq(r.v2After)}\\,\\mathrm{m/s}`),
   ];
-  if (ask.has("loss")) lines.push("动能损失：", math(`\\Delta E_k = \\frac{1}{2}m_1v_1^2 + \\frac{1}{2}m_2v_2^2 - \\left(\\frac{1}{2}m_1v_1'^2 + \\frac{1}{2}m_2v_2'^2\\right) \\approx ${f(r.loss)}\\,\\mathrm{J}`));
+  if (ask.has("loss")) lines.push("动能损失：", math(`\\Delta E_k = \\frac{1}{2}m_1v_1^2 + \\frac{1}{2}m_2v_2^2 - \\left(\\frac{1}{2}m_1v_1'^2 + \\frac{1}{2}m_2v_2'^2\\right) ${eq(r.loss)}\\,\\mathrm{J}`));
   const answers = [
     ask.has("v1After") ? `A 球碰后速度为 ${f(r.v1After)} m/s` : "",
     ask.has("v2After") ? `B 球碰后速度为 ${f(r.v2After)} m/s` : "",
@@ -735,23 +742,23 @@ function buildMultiDetailedSolution(problem: Problem, result: SolveResult): stri
       "① 受力分析与匀变速运动",
       "解",
       "沿斜面方向取向下为正，垂直斜面方向受力平衡。",
-      math(`N = mg\\cos\\theta \\approx ${f(r.normal)}\\,\\mathrm{N}`),
+      math(`N = mg\\cos\\theta ${eq(r.normal)}\\,\\mathrm{N}`),
       math(`mg\\sin\\theta - f = ma, \\qquad f = \\mu N`),
-      math(`a = g(\\sin\\theta - \\mu\\cos\\theta) \\approx ${f(r.a)}\\,\\mathrm{m/s^2}`),
-      r.reachedBottom ? math(`L = v_0t + \\frac{1}{2}at^2 \\implies t \\approx ${f(r.t)}\\,\\mathrm{s}`) : math(`v_0 + at = 0 \\implies t \\approx ${f(r.t)}\\,\\mathrm{s}`),
-      math(`v = v_0 + at \\approx ${f(r.vEnd)}\\,\\mathrm{m/s}`),
+      math(`a = g(\\sin\\theta - \\mu\\cos\\theta) ${eq(r.a)}\\,\\mathrm{m/s^2}`),
+      r.reachedBottom ? math(`L = v_0t + \\frac{1}{2}at^2 \\implies t ${eq(r.t)}\\,\\mathrm{s}`) : math(`v_0 + at = 0 \\implies t ${eq(r.t)}\\,\\mathrm{s}`),
+      math(`v = v_0 + at ${eq(r.vEnd)}\\,\\mathrm{m/s}`),
     ];
     const second = [
       "② 功与能量",
       "解",
       "以底端为重力势能零点，从顶端到末位置：",
-      math(`W_G = mg\\Delta h \\approx ${f(r.Wg)}\\,\\mathrm{J}`),
-      math(`W_f = -\\mu mg\\cos\\theta \\cdot s \\approx ${f(r.Wf)}\\,\\mathrm{J}`),
+      math(`W_G = mg\\Delta h ${eq(r.Wg)}\\,\\mathrm{J}`),
+      math(`W_f = -\\mu mg\\cos\\theta \\cdot s ${eq(r.Wf)}\\,\\mathrm{J}`),
       "由动能定理：",
       math(`W_G + W_f = \\frac{1}{2}mv^2 - \\frac{1}{2}mv_0^2`),
-      math(`v \\approx ${f(r.vEnd)}\\,\\mathrm{m/s}`),
+      math(`v ${eq(r.vEnd)}\\,\\mathrm{m/s}`),
       "摩擦生热等于克服摩擦力做功：",
-      math(`Q = -W_f \\approx ${f(r.heat)}\\,\\mathrm{J}`),
+      math(`Q = -W_f ${eq(r.heat)}\\,\\mathrm{J}`),
     ];
     return [...first, ...second].join("\n\n");
   }
@@ -762,22 +769,22 @@ function buildMultiDetailedSolution(problem: Problem, result: SolveResult): stri
       "① 分别受力与相对运动",
       "解",
       "滑块受向左摩擦力，木板受向右摩擦力：",
-      math(`a_1 = -\\mu g \\approx ${f(-p.mu * p.g)}\\,\\mathrm{m/s^2}`),
-      math(`a_2 = \\frac{\\mu mg}{M} \\approx ${f((p.mu * p.m * p.g) / p.M)}\\,\\mathrm{m/s^2}`),
+      math(`a_1 = -\\mu g ${eq(-p.mu * p.g)}\\,\\mathrm{m/s^2}`),
+      math(`a_2 = \\frac{\\mu mg}{M} ${eq((p.mu * p.m * p.g) / p.M)}\\,\\mathrm{m/s^2}`),
       r.slidOff ? "滑块滑离时相对位移为 L：" : "共速时两速度相等：",
       r.slidOff
-        ? math(`L = v_0t + \\frac{1}{2}(a_1 - a_2)t^2 \\implies t \\approx ${f(r.t)}\\,\\mathrm{s}`)
-        : math(`v_0 + a_1t = a_2t \\implies t \\approx ${f(r.t)}\\,\\mathrm{s}`),
-      r.slidOff ? math(`v_1 \\approx ${f(r.vBlockEnd)}\\,\\mathrm{m/s},\\qquad v_2 \\approx ${f(r.vBoardEnd)}\\,\\mathrm{m/s}`) : math(`v = \\frac{mv_0}{m + M} \\approx ${f(r.vCommon)}\\,\\mathrm{m/s}`),
+        ? math(`L = v_0t + \\frac{1}{2}(a_1 - a_2)t^2 \\implies t ${eq(r.t)}\\,\\mathrm{s}`)
+        : math(`v_0 + a_1t = a_2t \\implies t ${eq(r.t)}\\,\\mathrm{s}`),
+      r.slidOff ? math(`v_1 ${eq(r.vBlockEnd)}\\,\\mathrm{m/s},\\qquad v_2 ${eq(r.vBoardEnd)}\\,\\mathrm{m/s}`) : math(`v = \\frac{mv_0}{m + M} ${eq(r.vCommon)}\\,\\mathrm{m/s}`),
     ];
     const second = [
       "② 动量与能量",
       "解",
       "水平面光滑，系统水平方向动量守恒：",
-      math(`mv_0 = (m + M)v \\implies v \\approx ${f(r.vCommon)}\\,\\mathrm{m/s}`),
+      math(`mv_0 = (m + M)v \\implies v ${eq(r.vCommon)}\\,\\mathrm{m/s}`),
       "由能量守恒，摩擦生热等于系统动能减少量：",
-      math(`Q = \\frac{1}{2}mv_0^2 - \\frac{1}{2}(m + M)v^2 \\approx ${f(r.heat)}\\,\\mathrm{J}`),
-      r.slidOff ? "由于相对位移达到板长，滑块在共速前已从右端滑离。" : math(`\\Delta s = \\frac{Q}{\\mu mg} \\approx ${f(r.slip)}\\,\\mathrm{m}`),
+      math(`Q = \\frac{1}{2}mv_0^2 - \\frac{1}{2}(m + M)v^2 ${eq(r.heat)}\\,\\mathrm{J}`),
+      r.slidOff ? "由于相对位移达到板长，滑块在共速前已从右端滑离。" : math(`\\Delta s = \\frac{Q}{\\mu mg} ${eq(r.slip)}\\,\\mathrm{m}`),
     ];
     return [...first, ...second].join("\n\n");
   }
@@ -791,18 +798,18 @@ function buildMultiDetailedSolution(problem: Problem, result: SolveResult): stri
     "恢复系数定义：",
     math(`v_2' - v_1' = e(v_1 - v_2)`),
     "联立解得：",
-    math(`v_1' = \\frac{(m_1 - em_2)v_1 + (1 + e)m_2v_2}{m_1 + m_2} \\approx ${f(r.v1After)}\\,\\mathrm{m/s}`),
-    math(`v_2' = \\frac{(m_2 - em_1)v_2 + (1 + e)m_1v_1}{m_1 + m_2} \\approx ${f(r.v2After)}\\,\\mathrm{m/s}`),
+    math(`v_1' = \\frac{(m_1 - em_2)v_1 + (1 + e)m_2v_2}{m_1 + m_2} ${eq(r.v1After)}\\,\\mathrm{m/s}`),
+    math(`v_2' = \\frac{(m_2 - em_1)v_2 + (1 + e)m_1v_1}{m_1 + m_2} ${eq(r.v2After)}\\,\\mathrm{m/s}`),
   ];
   const second = [
     "② 能量检验",
     "解",
     "碰前总动能：",
-    math(`E_{k0} = \\frac{1}{2}m_1v_1^2 + \\frac{1}{2}m_2v_2^2 \\approx ${f(r.keBefore)}\\,\\mathrm{J}`),
+    math(`E_{k0} = \\frac{1}{2}m_1v_1^2 + \\frac{1}{2}m_2v_2^2 ${eq(r.keBefore)}\\,\\mathrm{J}`),
     "碰后总动能：",
-    math(`E_{k1} = \\frac{1}{2}m_1v_1'^2 + \\frac{1}{2}m_2v_2'^2 \\approx ${f(r.keAfter)}\\,\\mathrm{J}`),
+    math(`E_{k1} = \\frac{1}{2}m_1v_1'^2 + \\frac{1}{2}m_2v_2'^2 ${eq(r.keAfter)}\\,\\mathrm{J}`),
     "动能损失：",
-    math(`\\Delta E_k = E_{k0} - E_{k1} \\approx ${f(r.loss)}\\,\\mathrm{J}`),
+    math(`\\Delta E_k = E_{k0} - E_{k1} ${eq(r.loss)}\\,\\mathrm{J}`),
     p.e >= 0.999 ? "完全弹性碰撞中动能守恒，损失应为 0。" : "损失转化为内能；e = 0 时损失最大，两球碰后同速。",
   ];
   return [...first, ...second].join("\n\n");
