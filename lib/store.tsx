@@ -32,6 +32,7 @@ const DB_VERSION = 1;
 const PREFS_KEY = "gewu-prefs-v2";
 const FALLBACK_KEY = "gewu-studio-fallback-v2";
 const HS_SEED_KEY = "gewu-seed-hs-v2";
+const FORCES_OFF_KEY = "gewu-forces-default-off-v1";
 
 export type StorageMode = "indexeddb" | "local" | "memory";
 
@@ -116,11 +117,15 @@ function loadPrefs(): Prefs {
     const raw = localStorage.getItem(PREFS_KEY);
     if (!raw) return DEFAULT_PREFS;
     const parsed = JSON.parse(raw) as Partial<Prefs>;
+    const stage = { ...DEFAULT_PREFS.stage, ...(parsed.stage ?? {}) };
+    // 旧版本把「受力分析」默认叠加，存下来的偏好会盖住新默认值：升级后先统一关掉，
+    // 用户之后显式打开的选择由写入的迁移标记保留。
+    if (localStorage.getItem(FORCES_OFF_KEY) !== "1") stage.forces = false;
     return {
       ...DEFAULT_PREFS,
       ...parsed,
       rightTab: parsed.rightTab === "chat" || parsed.rightTab === "states" ? parsed.rightTab : "parameters",
-      stage: { ...DEFAULT_PREFS.stage, ...(parsed.stage ?? {}) },
+      stage,
     };
   } catch {
     return DEFAULT_PREFS;
@@ -493,6 +498,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const next = { ...prev, ...patch, stage: { ...prev.stage, ...(patch.stage ?? {}) } };
       try {
         localStorage.setItem(PREFS_KEY, JSON.stringify(next));
+        localStorage.setItem(FORCES_OFF_KEY, "1");
       } catch {
         /* 偏好写入失败不影响使用 */
       }

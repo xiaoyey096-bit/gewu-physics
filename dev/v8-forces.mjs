@@ -54,6 +54,13 @@ function seedDb(sessions, project) {
 
 const SEED_SCRIPT = `(${seedDb.toString()})(${JSON.stringify(QA_SESSIONS)}, ${JSON.stringify(QA_PROJECT)})`;
 
+// 升级前浏览器里存下的界面偏好：那一版 forces 默认为 true，会盖住现在的「默认只保留运动方向」。
+const LEGACY_PREFS = {
+  leftOpen: true, rightOpen: true, leftWidth: 280, rightWidth: 320, speed: 1, loop: false,
+  rightTab: "parameters", librarySort: "updated", libraryFilter: "all",
+  stage: { grid: true, vectors: true, forces: true, stateArrows: true, trail: true, markers: true, strobe: false, glow: true, energy: true },
+};
+
 async function pixels(browser, test) {
   return browser.evaluate(`(() => {
     const c = document.querySelector(${JSON.stringify(CANVAS)});
@@ -74,6 +81,7 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   const seeded = await browser.evaluate(SEED_SCRIPT);
   log("seed", seeded);
   expect("QA 题库写入成功", seeded === "ok", seeded);
+  await browser.evaluate(`localStorage.setItem("gewu-prefs-v2", ${JSON.stringify(JSON.stringify(LEGACY_PREFS))}); localStorage.removeItem("gewu-forces-default-off-v1");`);
   await browser.goto(BASE);
   await enterStudy(browser);
 
@@ -163,6 +171,15 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   // 与题库行一致：点「最近」条目直接进入题目界面（左栏换成题面 + 「返回题库」）。
   const openedProblem = await browser.exists(PROBLEM_PANE);
   check("点击最近条目直接进入题目界面", openedProblem, openedProblem);
+
+  // 迁移只改运行时读取，不重写存好的偏好：老用户进来必须看不到受力箭头，但原始记录保持原样。
+  const legacyState = await browser.evaluate(`(() => ({
+    stored: JSON.parse(localStorage.getItem("gewu-prefs-v2") ?? "null")?.stage?.forces ?? null,
+    marker: localStorage.getItem("gewu-forces-default-off-v1"),
+    pressed: document.querySelector('button[aria-label="受力分析"]')?.getAttribute("aria-pressed"),
+  }))()`);
+  log("legacyPrefs", legacyState);
+  check("老偏好 forces:true 被一次性迁移，受力分析开关为关", legacyState.pressed === "false" && legacyState.stored === true, legacyState);
   await browser.click("返回题库");
   await browser.wait(`!!document.querySelector(${JSON.stringify(RECENT_ITEM)})`, "最近栏恢复");
   check("返回题库后最近栏重新可见", await browser.exists(RECENT_ITEM), true);
@@ -307,4 +324,18 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   log("incline", incline);
   check("斜面停下后滑动摩擦力换成静摩擦力并标注消失", incline.labels.some((t) => /f静（v 0）/.test(t)) && incline.labels.some((t) => /本阶段消失：f/.test(t)), incline.labels.slice(0, 12));
   await shot("v8-06-incline.png");
+
+  // —— 迁移只发生一次：用户显式打开受力之后刷新，必须保持打开，不能被迁移反复按回关闭 ——
+  await setToggle("受力分析", true);
+  await browser.goto(BASE);
+  await enterStudy(browser);
+  await browser.clickSelector(`${RECENT} button[aria-label*="倾角 30°"]`);
+  await browser.wait(`!!document.querySelector('button[aria-label="受力分析"]')`, "刷新后显示选项就绪", 20000);
+  const afterReload = await browser.evaluate(`(() => ({
+    marker: localStorage.getItem("gewu-forces-default-off-v1"),
+    pressed: document.querySelector('button[aria-label="受力分析"]')?.getAttribute("aria-pressed"),
+  }))()`);
+  log("afterReload", afterReload);
+  check("刷新后用户显式打开的受力分析保持打开", afterReload.pressed === "true" && afterReload.marker === "1", afterReload);
+  await shot("v8-08-prefs-migration.png");
 });
