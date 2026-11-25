@@ -116,7 +116,9 @@ await runProbe("v4-export", { port: 9362, width: 1600, height: 1000 }, async ({ 
   const ev = expression => browser.evaluate(expression);
   const text = selector => ev(`document.querySelector(${JSON.stringify(selector)})?.textContent || ''`);
   const capture = name => ev(`exportQA.capture(${JSON.stringify(name)})`);
-  const inventory = () => readdirSync(downloads).sort();
+  // 本机 Chrome 会把自身的下载列表页另存为 32 MB 的 downloads.htm，写盘过程和限速导出互相抢 IO，
+  // 它不属于产品导出，必须从清单里排除，否则「不应出现新下载」的检查会随机失败。
+  const inventory = () => readdirSync(downloads).filter(file => !/^downloads\.htm/.test(file)).sort();
   const downloadsStarted = () => browser.events.filter(e => e.method === "Browser.downloadWillBegin").length;
   const uiButton = label => `[...document.querySelectorAll('[role="dialog"] button')].find(b => b.textContent.trim() === ${JSON.stringify(label)})`;
   const noPartial = () => !inventory().some(file => /\.crdownload$|\.tmp$/.test(file));
