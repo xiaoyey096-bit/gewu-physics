@@ -92,10 +92,10 @@ function ParameterValueInput({ config, params, onCommit }: {
 type ToggleKey = "grid" | "vectors" | "forces" | "stateArrows" | "trail" | "markers" | "strobe" | "glow" | "energy";
 
 const DISPLAY_TOGGLES: { key: ToggleKey; label: string; hint: string }[] = [
-  { key: "forces", label: "受力分析", hint: "在画布上叠加受力箭头：播放过程按时刻变化，「定位」到临界状态时停在那一刻的受力。默认关闭，画面只保留运动方向。" },
+  { key: "forces", label: "受力分析", hint: "在画布上叠加受力箭头：播放过程按时刻变化，「定位」到临界状态时停在那一刻的受力。默认关闭，画面只保留运动方向；动画上方的受力卡片不受此开关影响。" },
   { key: "stateArrows", label: "状态箭头", hint: "「定位」到临界状态时，画出该时刻的速度方向箭头。" },
   { key: "vectors", label: "速度矢量", hint: "显示水平/竖直/合速度三个箭头" },
-  { key: "energy", label: "能量", hint: "动能与势能实时条，验证机械能守恒" },
+  { key: "energy", label: "能量", hint: "动画上方的能量卡片：动能、势能与摩擦生热的实时数值" },
   { key: "trail", label: "残影", hint: "最近时刻的小球虚像" },
   { key: "strobe", label: "频闪", hint: "等时间间隔采样点，验证水平匀速" },
   { key: "grid", label: "网格", hint: "坐标网格与刻度" },

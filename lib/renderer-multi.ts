@@ -1,7 +1,7 @@
 // 多题型 Canvas 场景：斜面、滑块-木板、一维碰撞。
 // 与抛体渲染器共用同一解析结果协议；纯同步绘制，首帧/隐藏标签页下也能出图。
 
-import type { BlockBoardParams, CollisionParams, InclineParams, Problem, SolveResult, StageOptions } from "./types";
+import type { BlockBoardParams, InclineParams, Problem, SolveResult, StageOptions } from "./types";
 import type { Palette } from "./renderer";
 import { DEFAULT_STAGE } from "./types";
 import { sampleAt } from "./physics";
@@ -212,45 +212,6 @@ function drawGrid(ctx: CanvasRenderingContext2D, view: SceneView, palette: Palet
   return boxes;
 }
 
-function drawStatCard(ctx: CanvasRenderingContext2D, width: number, palette: Palette, title: string, rows: [string, string, string?][]) {
-  const compact = width < 640;
-  const rowH = compact ? 15 : 17;
-  const pw = compact ? 188 : 216;
-  const ph = 28 + rows.length * rowH;
-  const px = width - PAD.right - pw - 2;
-  const py = PAD.top + (compact ? 12 : 16);
-  ctx.save();
-  ctx.globalAlpha = 0.88;
-  ctx.fillStyle = palette.surface;
-  panel(ctx, px, py, pw, ph, 10);
-  ctx.fill();
-  ctx.restore();
-  ctx.save();
-  ctx.globalAlpha = 0.7;
-  ctx.strokeStyle = palette.border;
-  ctx.lineWidth = 1;
-  panel(ctx, px, py, pw, ph, 10);
-  ctx.stroke();
-  ctx.restore();
-  ctx.font = compact ? "10px ui-monospace, monospace" : "11px ui-monospace, monospace";
-  ctx.fillStyle = palette.muted;
-  ctx.fillText(title, px + 10, py + 16);
-  rows.forEach(([name, value, color], i) => {
-    const ry = py + 32 + i * rowH;
-    if (color) {
-      ctx.fillStyle = color;
-      ctx.fillRect(px + 10, ry - 7, compact ? 7 : 8, compact ? 7 : 8);
-    }
-    ctx.fillStyle = palette.muted;
-    ctx.fillText(name, px + (color ? 21 : 10), ry);
-    ctx.textAlign = "right";
-    ctx.fillStyle = palette.fg;
-    ctx.fillText(value, px + pw - 10, ry);
-    ctx.textAlign = "left";
-  });
-  ctx.font = "11px system-ui, sans-serif";
-}
-
 function bodyAt(
   ctx: CanvasRenderingContext2D,
   view: SceneView,
@@ -318,14 +279,13 @@ export function drawTemplateScene(
   // 坐标刻度文字也参与避让，受力标签才不会压到数轴数字上。
   const obstacles = options.grid ? drawGrid(ctx, view, palette) : [];
   drawGround(ctx, width, view, palette);
-  if (result.template === "incline") drawInclineScene(ctx, width, problem, result, time, view, palette, options, obstacles);
-  else if (result.template === "blockBoard") drawBlockBoardScene(ctx, width, problem, result, time, view, palette, options, obstacles);
-  else if (result.template === "collision1d") drawCollisionScene(ctx, width, problem, result, time, view, palette, options, obstacles);
+  if (result.template === "incline") drawInclineScene(ctx, problem, result, time, view, palette, options, obstacles);
+  else if (result.template === "blockBoard") drawBlockBoardScene(ctx, problem, result, time, view, palette, options, obstacles);
+  else if (result.template === "collision1d") drawCollisionScene(ctx, result, time, view, palette, options, obstacles);
 }
 
 function drawInclineScene(
   ctx: CanvasRenderingContext2D,
-  width: number,
   problem: Problem,
   result: Extract<SolveResult, { template: "incline" }>,
   time: number,
@@ -368,7 +328,6 @@ function drawInclineScene(
 
   const body = result.bodies[0];
   const s = sampleAt(result.series, time);
-  const travelled = sin > 1e-6 ? Math.max(0, (H - s.y) / sin) : Math.max(0, s.x / Math.max(cos, 1e-6));
 
   ctx.save();
   ctx.strokeStyle = palette.resultant;
@@ -401,24 +360,10 @@ function drawInclineScene(
     velocityArrow(ctx, point.x, point.y, s.vx, s.vy, view.scale, palette.vx, "v", palette.bg);
   }
   if (options.forces) drawForces(ctx, view, palette, result, time, { block: { x: point.x, y: point.y } }, obstacles);
-
-  const vNow = Math.hypot(s.vx, s.vy);
-
-  if (options.energy) {
-    const ek = 0.5 * p.m * vNow * vNow;
-    const ep = p.m * p.g * Math.max(0, s.y);
-    const heat = result.heat * Math.min(1, travelled / Math.max(result.distance, 1e-6));
-    drawStatCard(ctx, width, palette, "能量 · J", [
-      ["动能 Eₖ", ek.toFixed(1), palette.vx],
-      ["重力势能", ep.toFixed(1), palette.info],
-      ["摩擦生热 Q", heat.toFixed(1), palette.vy],
-    ]);
-  }
 }
 
 function drawBlockBoardScene(
   ctx: CanvasRenderingContext2D,
-  width: number,
   problem: Problem,
   result: Extract<SolveResult, { template: "blockBoard" }>,
   time: number,
@@ -434,10 +379,9 @@ function drawBlockBoardScene(
   const blockPoint = bodyAt(ctx, view, block, time, palette);
   const boardState = sampleAt(board.series, time);
   const blockState = sampleAt(block.series, time);
-  const slip = Math.abs(blockState.x - boardState.x - 0.5 + p.L / 2);
 
   if (options.markers) {
-    const y = view.Y(0) + (width < 560 ? 26 : 30);
+    const y = view.Y(0) + (view.width < 560 ? 26 : 30);
     const x0 = view.X(boardState.x - p.L / 2 + 0.5), x1 = blockPoint.x;
     if (Math.abs(x1 - x0) > 6) {
       ctx.save();
@@ -472,20 +416,10 @@ function drawBlockBoardScene(
       board: { x: boardPoint.x, y: boardPoint.y },
     }, obstacles);
   }
-
-  if (options.energy) {
-    drawStatCard(ctx, width, palette, "能量 · J", [
-      ["Eₖ 滑块", (0.5 * p.m * blockState.vx ** 2).toFixed(1), palette.vx],
-      ["Eₖ 木板", (0.5 * p.M * boardState.vx ** 2).toFixed(1), palette.info],
-      ["摩擦生热 Q", (p.mu * p.m * p.g * slip).toFixed(1), palette.vy],
-    ]);
-  }
 }
 
 function drawCollisionScene(
   ctx: CanvasRenderingContext2D,
-  width: number,
-  problem: Problem,
   result: Extract<SolveResult, { template: "collision1d" }>,
   time: number,
   view: SceneView,
@@ -493,7 +427,6 @@ function drawCollisionScene(
   options: StageOptions,
   obstacles: Box[],
 ) {
-  const p = problem.params as CollisionParams;
   const a = result.bodies[0], b = result.bodies[1];
   const pa = bodyAt(ctx, view, a, time, palette);
   const pb = bodyAt(ctx, view, b, time, palette);
@@ -523,15 +456,5 @@ function drawCollisionScene(
   }
   if (options.forces) {
     drawForces(ctx, view, palette, result, time, { a: { x: pa.x, y: pa.y }, b: { x: pb.x, y: pb.y } }, obstacles);
-  }
-
-  if (options.energy) {
-    const now = time >= result.tHit && result.hit;
-    const eTotal = 0.5 * p.m1 * sa.vx ** 2 + 0.5 * p.m2 * sb.vx ** 2;
-    drawStatCard(ctx, width, palette, `碰撞 · e = ${p.e}`, [
-      ["总动量 p", `${(p.m1 * sa.vx + p.m2 * sb.vx).toFixed(2)} kg·m/s`, palette.vx],
-      [now ? "碰后 Eₖ" : "碰前 Eₖ", `${eTotal.toFixed(1)} J`, palette.info],
-      ["动能损失", `${Math.max(0, result.keBefore - eTotal).toFixed(1)} J`, palette.vy],
-    ]);
   }
 }

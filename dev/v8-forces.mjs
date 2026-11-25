@@ -229,6 +229,33 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   check("画布提示的拖动对象就是右栏的第一个研究对象", !!firstBody && (dragHint.tip ?? "").startsWith(`运动对象：${firstBody} `) && (dragHint.canvas ?? "").includes(`拖动${firstBody}沿轨迹定位`), { firstBody, ...dragHint });
   await shot("v8-03-states.png");
 
+  // —— 动画上方的读数卡片：能量 + 按类分组的受力，排在画布之上 ——
+  const stageReadout = () => browser.evaluate(`(() => {
+    const root = document.querySelector('[aria-label="动画卡片"]');
+    const canvas = document.querySelector(${JSON.stringify(CANVAS)});
+    if (!root || !canvas) return null;
+    const r = root.getBoundingClientRect(), c = canvas.getBoundingClientRect();
+    return {
+      above: r.bottom <= c.top + 1,
+      energy: root.querySelector('[aria-label="能量卡片"]')?.textContent.replace(/\\s+/g, " ").trim() ?? null,
+      groups: [...root.querySelectorAll('[aria-label^="受力卡片"]')].map((g) => g.getAttribute("aria-label").replace("受力卡片 ", "")),
+      chips: [...root.querySelectorAll("[data-force]")].map((el) => ({
+        id: el.dataset.force, symbol: el.querySelector("span")?.textContent.trim() ?? "",
+        active: el.dataset.active === "true", fresh: el.dataset.fresh === "true",
+        dimmed: Number(getComputedStyle(el).opacity) < 0.6,
+      })),
+    };
+  })()`);
+  await browser.evaluate(`document.querySelector(${JSON.stringify(STATES)})?.querySelector('button[aria-label^="定位"]')?.click()`);
+  await sleep(400);
+  const cards = await stageReadout();
+  log("stageCards", { ...cards, chips: cards?.chips.map((c) => `${c.symbol}:${c.active ? "on" : "off"}${c.fresh ? "·新" : ""}`) });
+  const symbols = (cards?.chips ?? []).map((c) => c.symbol);
+  check("读数卡片排在动画上方，并含能量卡片", !!cards?.above && /Σ [\d.]+/.test(cards?.energy ?? ""), { above: cards?.above, energy: cards?.energy });
+  check("受力卡片按重力/弹力/摩擦力分类", ["重力", "弹力", "摩擦力"].every((name) => (cards?.groups ?? []).includes(name)), cards?.groups);
+  check("卡片列出两物体的全部力符号", ["G", "N₁", "N₂", "f", "f′", "f地"].every((symbol) => symbols.includes(symbol)), [...new Set(symbols)]);
+  check("t=0 时现役的力实心带醒目色，未登场的静摩擦力虚化", (cards?.chips ?? []).filter((c) => c.active).length >= 6 && (cards?.chips ?? []).filter((c) => c.active).every((c) => c.fresh && !c.dimmed) && (cards?.chips ?? []).filter((c) => !c.active).every((c) => c.dimmed), cards?.chips);
+
   // 顶端「受力大小」开关：打开后每个力后跟（数值），与运动方向相反的力带负号。
   const FORCE_SIZE = `${STATES} button[aria-label="显示受力大小"]`;
   await browser.click("显示受力大小", FORCE_SIZE);
@@ -298,6 +325,12 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   log("afterSeek", { seekTarget, freshNext });
   check("定位到下一临界状态仍有醒目色箭头", freshNext > 40, freshNext);
   await shot("v8-05-canvas-seek.png");
+
+  // 状态推进后卡片跟着换：滑动摩擦力退场虚化，静摩擦力登场实心，与画布上的醒目色同步。
+  const nextCards = await stageReadout();
+  const chipOf = (id) => nextCards?.chips.find((c) => c.id === id);
+  log("nextCards", { seek: seekTarget, chips: nextCards?.chips.map((c) => `${c.symbol}:${c.active ? "on" : "off"}${c.fresh ? "·新" : ""}${c.dimmed ? "·淡" : ""}`) });
+  check("换阶段后滑动摩擦力虚化、静摩擦力实心", !!chipOf("block-f")?.dimmed && !!chipOf("block-fs")?.active && !chipOf("block-fs")?.dimmed && !!chipOf("board-f")?.dimmed, { slide: chipOf("block-f"), stat: chipOf("block-fs"), boardSlide: chipOf("board-f") });
 
   // 拖到阶段中后段：受力仍持续绘制，但醒目色要退回墨色，否则整段动画都染红就失去「刚出现」的含义。
   await browser.dragSlider("动画时间轴", 0.78);

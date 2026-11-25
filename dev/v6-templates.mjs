@@ -66,7 +66,8 @@ await runProbe("v6-templates", { port: 9335, width: 1440, height: 900 }, async (
       for (let i = 0; i < p.length; i += 4 * 97) { if (p[i+3] > 8) painted++; colors.add(p.slice(i,i+4).join(',')); }
       return {w:c.width, h:c.height, painted, colors:colors.size};
     })()`);
-    expect(`${item.key}Painted`, state.painted > 200 && state.colors > 4, state);
+    // 能量面板与数值 HUD 已移到画布上方的卡片里，抛体的网格+轨迹本身就稀疏；阈值只用来抓空白画布。
+    expect(`${item.key}Painted`, state.painted > 80 && state.colors > 4, state);
     const t = await browser.evaluate(`(() => { const s = document.querySelector('[role="slider"][aria-label="动画时间轴"]'); return s ? {d:Number(s.getAttribute('aria-valuemax'))} : null; })()`);
     expect(`${item.key}Duration`, t && t.d > 0, t);
 

@@ -12,6 +12,7 @@ import type { Phase, Problem, ProblemParams, SolveResult, StageApi, StageOptions
 import { useReducedMotion } from "@/lib/use-media";
 import { cn } from "@/lib/utils";
 import { ControlDeck } from "./ControlDeck";
+import { StageCards } from "./StageCards";
 
 interface Props {
   problem: Problem;
@@ -259,6 +260,7 @@ export function StageView(props: Props) {
 
   return (
     <div className="flex h-auto min-w-0 flex-col gap-2">
+      <StageCards problem={problem} result={result} time={time} options={options} />
       <div
         ref={wrapRef}
         className={cn(
