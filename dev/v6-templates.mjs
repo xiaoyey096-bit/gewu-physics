@@ -101,7 +101,7 @@ await runProbe("v6-templates", { port: 9335, width: 1440, height: 900 }, async (
       const hit = tabs.find((t) => t.textContent.includes("对象与受力"));
       hit?.click();
       const box = document.querySelector('div[aria-label="题目临界状态"]');
-      return { tab: !!hit, points: box ? box.querySelectorAll('li button[aria-label^="临界状态"]').length : -1, labels: box ? [...box.querySelectorAll("ul ul li")].map((li) => li.textContent.trim()).slice(0, 3) : [] };
+      return { tab: !!hit, points: box ? box.querySelectorAll('li button[aria-label^="临界状态"]').length : -1, labels: box ? [...box.querySelectorAll("li p")].map((p) => p.textContent.trim()).filter((t) => t.includes("：")).slice(0, 3) : [] };
     })()`);
     expect(`${item.key}CriticalStates`, forces.tab && forces.points >= 1 && forces.labels.length > 0, forces);
     await shot(`02-${item.key}-stage.png`);

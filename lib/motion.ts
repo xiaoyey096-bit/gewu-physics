@@ -64,27 +64,6 @@ export function forcesByBody(result: SolveResult, forces: ForceVector[], time: n
     .filter((group) => group.list.length > 0);
 }
 
-/** 相对上一阶段发生了什么，写成句子而不是「新」标签；摩擦力性质改变单独说清楚。 */
-export function phaseChanges(result: SolveResult, newForces: ForceVector[], goneForces: ForceVector[]): string[] {
-  const named = (list: ForceVector[]) => list.map((force) => `${force.name} ${force.symbol}`).join("、");
-  const friction = (list: ForceVector[]) => list.filter((force) => /摩擦/.test(force.name));
-  const other = (list: ForceVector[]) => list.filter((force) => !/摩擦/.test(force.name));
-  const lines: string[] = [];
-  // 板块模型两个对象的重力都叫 G，不说清是谁受的力就分不清多了哪个力。
-  for (const body of result.bodies) {
-    const goneFr = friction(goneForces.filter((force) => force.body === body.id));
-    const newFr = friction(newForces.filter((force) => force.body === body.id));
-    const goneOther = other(goneForces.filter((force) => force.body === body.id));
-    const newOther = other(newForces.filter((force) => force.body === body.id));
-    if (goneFr.length && newFr.length) lines.push(`${body.label}的摩擦力换了性质：${named(goneFr)} → ${named(newFr)}`);
-    if (goneFr.length && !newFr.length) lines.push(`${body.label}不再受到：${named(goneFr)}`);
-    if (newFr.length && !goneFr.length) lines.push(`${body.label}开始受到：${named(newFr)}`);
-    if (goneOther.length) lines.push(`${body.label}不再受到：${named(goneOther)}`);
-    if (newOther.length) lines.push(`${body.label}开始受到：${named(newOther)}`);
-  }
-  return lines;
-}
-
 /**
  * 临界状态点：每个受力新出现的时刻、每个事件时刻都是临界点。
  */

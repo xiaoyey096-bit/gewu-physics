@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { criticalStates, forcesByBody, phaseChanges } from "@/lib/motion";
+import { Toggle } from "@/components/ui/toggle";
+import { criticalStates, forcesByBody } from "@/lib/motion";
 import type { Problem, SolveResult } from "@/lib/types";
 
 interface Props {
@@ -15,26 +17,41 @@ function newton(value: number): string {
   return `${Number(value.toFixed(Math.abs(value) >= 100 ? 0 : 2))} N`;
 }
 
+/** 与运动方向相反的力在括号里带负号，学生一眼看出它拖慢物体。 */
+function signed(force: { magnitude: number; trend: string }): string {
+  return `${force.trend.includes("与运动反向") ? "−" : ""}${newton(force.magnitude)}`;
+}
+
 export function CriticalPoints({ problem, result, onSeek, onExport, onExportAll }: Props) {
+  const [showValues, setShowValues] = useState(false);
   const points = criticalStates(problem, result);
-  const model = problem.template === "projectile" ? "理想抛体" : problem.template === "incline" ? "斜面滑动模型" : problem.template === "blockBoard" ? "滑块—木板模型" : "一维碰撞模型";
   const objects = result.bodies.map((body) => body.label);
   return (
     <div className="flex flex-col gap-3 p-4" aria-label="题目临界状态">
-      <div>
-        <h2 className="text-sm font-semibold">对象与受力状态</h2>
-        <p className="mt-1 text-xs leading-6 text-muted-foreground">
-          运动对象：{objects.length ? objects.join("和") : "质点"}
-          {result.bodies.length > 1 ? `，速度分别记作 ${result.bodies.map((body) => body.velocitySymbol).join("、")}` : ""} · {model}
-          <br />下面按时间顺序列出每一个运动状态：这段时间谁在动、每个对象各受哪些力、和上一阶段比多了哪个力或少了哪个力。
-          「定位」只把画面停在该时刻并显示速度方向；画布上画不画受力箭头由「受力分析」开关决定，这里列出的力值不受影响。
-        </p>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">对象与受力状态</h2>
+          <p className="mt-1 text-xs leading-6 text-muted-foreground">
+            运动对象：{objects.length ? objects.join("和") : "质点"}
+            {result.bodies.length > 1 ? `，速度分别记作 ${result.bodies.map((body) => body.velocitySymbol).join("、")}` : ""}
+          </p>
+        </div>
+        <Toggle
+          variant="outline"
+          size="sm"
+          className="h-7 shrink-0 px-2 text-[11px] data-[state=on]:border-muted-foreground/50 data-[state=on]:bg-muted data-[state=on]:text-foreground"
+          pressed={showValues}
+          onPressedChange={setShowValues}
+          aria-label="显示受力大小"
+          title="在力符号后显示大小；与运动方向相反的力带负号"
+        >
+          受力大小
+        </Toggle>
       </div>
 
       <ul className="flex flex-col gap-2">
         {points.map((point) => {
           const groups = forcesByBody(result, point.forces, point.time);
-          const changes = phaseChanges(result, point.newForces, point.goneForces);
           return (
             <li key={point.id} className="rounded-xl border border-border p-3">
               <button
@@ -61,31 +78,19 @@ export function CriticalPoints({ problem, result, onSeek, onExport, onExportAll 
                 </p>
               )}
 
-              {changes.length > 0 && (
-                <ul className="mt-2 flex flex-col gap-1 rounded-lg bg-muted/40 p-2">
-                  {changes.map((line) => (
-                    <li key={line} className="text-xs leading-6">{line}</li>
-                  ))}
-                </ul>
-              )}
-
               {groups.length > 0 && (
-                <div className="mt-2 flex flex-col gap-2">
+                <div className="mt-1.5 flex flex-col gap-0.5">
                   {groups.map((group) => (
-                    <div key={group.id}>
-                      <p className="text-xs leading-6 font-medium">{group.label}受到的力</p>
-                      <ul className="mt-0.5 flex flex-col gap-1">
-                        {group.list.map((force) => (
-                          <li key={force.id} className="flex items-baseline gap-1.5 text-xs leading-6">
-                            <span className="shrink-0 font-mono">{force.symbol}</span>
-                            <span className="min-w-0" title={force.formula}>
-                              {force.name} = {newton(force.magnitude)}
-                              {force.trend ? `，${force.trend}` : ""}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                    <p key={group.id} className="text-xs leading-6">
+                      <span className="font-medium">{group.label}：</span>
+                      {group.list.map((force, index) => (
+                        <span key={force.id}>
+                          {index > 0 && "、"}
+                          <span className="font-mono" title={force.formula}>{force.symbol}</span>
+                          {showValues && <span className="text-muted-foreground">（{signed(force)}）</span>}
+                        </span>
+                      ))}
+                    </p>
                   ))}
                 </div>
               )}
@@ -108,7 +113,7 @@ export function CriticalPoints({ problem, result, onSeek, onExport, onExportAll 
         <Camera />
         导出全部临界状态
       </Button>
-      <p className="text-xs leading-6 text-muted-foreground">合并为一张 PNG 图版，保留当前显示选项。数值由解析解给出。</p>
+      <p className="text-xs leading-6 text-muted-foreground">合并为一张 PNG 图版。</p>
     </div>
   );
 }
