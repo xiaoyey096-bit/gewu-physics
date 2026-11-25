@@ -24,7 +24,7 @@ export function CriticalPoints({ problem, result, onSeek, onExport, onExportAll 
         <h2 className="text-sm font-semibold">对象与临界状态</h2>
         <p className="mt-1 text-xs leading-6 text-muted-foreground">
           运动对象：{result.bodies.map((body) => `${body.label}（${body.velocitySymbol}）`).join("、") || "质点"} · {model}
-          <br />凡有新受力出现的时刻都列为临界状态点，「定位」后画布即显示此刻受力；只有整段运动中第一次登场的力用红色标出，消失后又回来的力保持墨色。
+          <br />凡有新受力出现的时刻都列为临界状态点，「定位」只把画面停在该时刻并显示速度方向；画布上的受力由「受力分析」开关决定，这里列出的力值不受影响。只有整段运动中第一次登场的力用红色标出，消失后又回来的力保持墨色。
         </p>
       </div>
 

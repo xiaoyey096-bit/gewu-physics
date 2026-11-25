@@ -262,9 +262,9 @@ export interface SessionRecord {
 export interface StageOptions {
   grid: boolean;
   vectors: boolean;
-  /** 动画过程中是否持续叠加受力箭头；关掉后受力只在「定位」临界状态时出现。 */
+  /** 画布是否叠加受力箭头，播放过程与「定位」到临界状态都跟随它；默认关，画面只保留运动方向。 */
   forces: boolean;
-  /** 定位临界状态时，除受力箭头之外是否再画运动方向箭头（速度等）。 */
+  /** 定位临界状态时，是否画出该时刻的运动方向箭头（速度）。 */
   stateArrows: boolean;
   trail: boolean;
   markers: boolean;

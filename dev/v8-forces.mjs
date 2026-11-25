@@ -68,7 +68,6 @@ async function pixels(browser, test) {
   })()`);
 }
 const INK = "r < 45 && g < 45 && b < 60 && d[i + 3] > 40";
-const FRESH = "r > 170 && g < 100 && b < 100 && d[i + 3] > 40";
 
 await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expect, check, shot, log }) => {
   await browser.goto(BASE);
@@ -198,29 +197,44 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   check("新出现的力标了「新」并用醒目色", states.fresh >= 3, states.fresh);
   await shot("v8-03-states.png");
 
-  // —— 画布：默认不叠加受力，定位后才出现；墨色描边 + 新受力红色 ——
+  // —— 画布：默认只画运动方向，受力是显式打开的叠加层 ——
   // 用比醒目色更严的红，避开合速度 #c81e5a 被算成受力箭头。
   const FRESH_RED = "r > 190 && g < 70 && b < 70 && d[i + 3] > 40";
-  const idleFresh = await pixels(browser, FRESH_RED);
-  const forceToggle = await browser.evaluate(`document.querySelector('button[aria-label="动画受力"]')?.getAttribute("aria-pressed")`);
-  log("idleForces", { idleFresh, forceToggle });
-  check("「动画受力」默认关闭", forceToggle === "false", forceToggle);
-  check("未定位时画布不出现受力箭头", idleFresh < 30, idleFresh);
+  const TEAL = "r < 40 && g > 100 && g < 170 && b > 90 && b < 160";
+  const locateFirst = () => browser.evaluate(`(() => { const b = document.querySelector(${JSON.stringify(STATES)})?.querySelector('button[aria-label^="定位"]'); b?.click(); return b?.getAttribute("aria-label") ?? null; })()`);
 
-  // 醒目色只标阶段起点附近，先定位到第一个临界状态再取帧，避免动画播过去后测不到。
-  await browser.evaluate(`(() => { document.querySelector(${JSON.stringify(STATES)})?.querySelector('button[aria-label^="定位"]')?.click(); })()`);
+  const idleFresh = await pixels(browser, FRESH_RED);
+  const forceToggle = await browser.evaluate(`document.querySelector('button[aria-label="受力分析"]')?.getAttribute("aria-pressed")`);
+  log("idleForces", { idleFresh, forceToggle });
+  check("「受力分析」默认关闭", forceToggle === "false", forceToggle);
+  check("默认画布不出现受力箭头", idleFresh < 30, idleFresh);
+
+  // 定位只把画面停在该时刻：物体描边还在，但不画受力。
+  const firstState = await locateFirst();
   await sleep(600);
   const ink = await pixels(browser, INK);
-  const freshStart = await pixels(browser, FRESH);
-  log("canvasStart", { ink, freshStart });
-  check("物体与常规力用墨色描边", ink > 400, ink);
-  check("临界状态起点的新受力画成醒目色箭头", freshStart > 300, freshStart);
-  await shot("v8-04-canvas-t0.png");
+  const locateFresh = await pixels(browser, FRESH_RED);
+  log("locateWithoutForces", { firstState, ink, locateFresh });
+  check("物体与常规标注用墨色描边", ink > 400, ink);
+  check("未打开受力分析时，定位也不画受力箭头", locateFresh < 30, locateFresh);
+  await shot("v8-04-canvas-locate-no-forces.png");
+
+  // 打开「受力分析」后，同一个临界状态才画出新登场的受力箭头。
+  await browser.click("动画参数", `${RIGHT} [role="tab"]`);
+  await browser.click("受力分析", 'button[aria-label="受力分析"]');
+  await browser.click("对象与受力", `${RIGHT} [role="tab"]`);
+  await browser.wait(`!!document.querySelector(${JSON.stringify(STATE_ITEMS)})`, "临界状态列表就绪");
+  await locateFirst();
+  await sleep(600);
+  const freshStart = await pixels(browser, FRESH_RED);
+  log("locateWithForces", { freshStart });
+  check("打开受力分析后，定位画出新受力箭头", freshStart > 300, freshStart);
+  await shot("v8-05-canvas-locate-forces.png");
 
   const seekTarget = states.seek.find((label) => /定位两者停下|定位达到共同速度|定位滑块停在/.test(label)) ?? states.seek[1];
   await browser.clickSelector(`${RIGHT} button[aria-label="${seekTarget}"]`);
   await sleep(600);
-  const freshNext = await pixels(browser, FRESH);
+  const freshNext = await pixels(browser, FRESH_RED);
   const afterSeek = await browser.evaluate(`(() => {
     const box = document.querySelector(${JSON.stringify(STATES)});
     return [...box.querySelectorAll("li")]
@@ -241,32 +255,30 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   check("同一个力不会在多个临界状态被标成新出现", debutSymbols.length === new Set(debutSymbols).size, debutSymbols);
   await shot("v8-05-canvas-seek.png");
 
-  // 打开「动画受力」后拖到阶段中后段：受力仍持续绘制，但醒目色要退回墨色，否则整段动画都染红就失去「刚出现」的含义。
-  // 显示选项在「动画参数」页签里，非当前页签的内容虽然留在 DOM 但不可点，先切过去。
-  await browser.click("动画参数", `${RIGHT} [role="tab"]`);
-  await browser.click("动画受力", 'button[aria-label="动画受力"]');
+  // 拖到阶段中后段：受力仍持续绘制，但醒目色要退回墨色，否则整段动画都染红就失去「刚出现」的含义。
   await browser.dragSlider("动画时间轴", 0.78);
   await sleep(400);
-  const settled = await pixels(browser, FRESH);
+  const settled = await pixels(browser, FRESH_RED);
   const settledInk = await pixels(browser, INK);
   log("settled", { settled, settledInk });
-  check("阶段播过后醒目色退回墨色", settled < 120 && settledInk > 400, { settled, settledInk });
+  check("阶段播过后受力仍在、醒目色退回墨色", settled < 120 && settledInk > 400, { settled, settledInk });
   await shot("v8-06-canvas-settled.png");
 
-  // —— 「状态箭头」：定位时力以外的箭头默认加上，可以整体关掉 ——
+  // —— 「状态箭头」只管定位时的速度箭头，受力归「受力分析」单独控制 ——
   const setToggle = async (label, want) => {
     const pressed = await browser.evaluate(`document.querySelector('button[aria-label=${JSON.stringify(label)}]')?.getAttribute("aria-pressed")`);
     if ((pressed === "true") !== want) await browser.click(label, `button[aria-label="${label}"]`);
     return want;
   };
-  const TEAL = "r < 40 && g > 100 && g < 170 && b > 90 && b < 160";
+  // 显示选项在「动画参数」页签里，非当前页签的内容虽然留在 DOM 但不可点，先切过去。
+  await browser.click("动画参数", `${RIGHT} [role="tab"]`);
   await setToggle("速度矢量", false);
-  await setToggle("动画受力", false);
+  await setToggle("受力分析", true);
   await setToggle("状态箭头", true);
   // 能量条的分量色与水平速度箭头同色，先关掉，免得把条当成箭头。
   await setToggle("能量", false);
   // 此刻右栏停在「动画参数」页签，临界状态列表不可点，用脚本触发同一个「定位」按钮。
-  await browser.evaluate(`(() => { const b=[...document.querySelectorAll(${JSON.stringify(`${STATES} button[aria-label^="定位"]`)})][0]; b?.click(); return b?.getAttribute("aria-label") ?? null; })()`);
+  await locateFirst();
   await sleep(400);
   const withArrows = await pixels(browser, TEAL);
   const withForces = await pixels(browser, FRESH_RED);
@@ -274,8 +286,15 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   await sleep(400);
   const withoutArrows = await pixels(browser, TEAL);
   const stillForces = await pixels(browser, FRESH_RED);
-  log("stateArrows", { withArrows, withForces, withoutArrows, stillForces });
-  check("定位时默认附带运动方向箭头，关掉后只剩受力", withArrows > 60 && withoutArrows < 20 && stillForces > 100, { withArrows, withoutArrows, stillForces });
+  // 再把受力也关掉：定位画面只剩物体与轨迹，两类箭头都不该出现。
+  await setToggle("受力分析", false);
+  await locateFirst();
+  await sleep(400);
+  const plainArrows = await pixels(browser, TEAL);
+  const plainForces = await pixels(browser, FRESH_RED);
+  log("stateArrows", { withArrows, withForces, withoutArrows, stillForces, plainArrows, plainForces });
+  check("定位时默认附带速度箭头，关掉状态箭头不影响受力", withArrows > 60 && withoutArrows < 20 && stillForces > 100, { withArrows, withoutArrows, stillForces });
+  check("关掉受力分析后定位只剩运动要素", plainArrows < 20 && plainForces < 30, { plainArrows, plainForces });
   await shot("v8-07-state-arrows.png");
 
   // —— 斜面题：停下前后摩擦力性质改变 ——

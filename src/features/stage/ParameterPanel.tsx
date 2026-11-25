@@ -92,8 +92,8 @@ function ParameterValueInput({ config, params, onCommit }: {
 type ToggleKey = "grid" | "vectors" | "forces" | "stateArrows" | "trail" | "markers" | "strobe" | "glow" | "energy";
 
 const DISPLAY_TOGGLES: { key: ToggleKey; label: string; hint: string }[] = [
-  { key: "forces", label: "动画受力", hint: "播放过程中持续画受力箭头。关掉后受力只在右侧「对象与受力」里定位到某个临界状态时出现。" },
-  { key: "stateArrows", label: "状态箭头", hint: "定位临界状态时，在受力箭头之外再画速度等运动方向箭头。" },
+  { key: "forces", label: "受力分析", hint: "在画布上叠加受力箭头：播放过程按时刻变化，「定位」到临界状态时停在那一刻的受力。默认关闭，画面只保留运动方向。" },
+  { key: "stateArrows", label: "状态箭头", hint: "「定位」到临界状态时，画出该时刻的速度方向箭头。" },
   { key: "vectors", label: "速度矢量", hint: "显示水平/竖直/合速度三个箭头" },
   { key: "energy", label: "能量", hint: "动能与势能实时条，验证机械能守恒" },
   { key: "trail", label: "残影", hint: "最近时刻的小球虚像" },

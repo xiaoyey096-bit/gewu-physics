@@ -52,10 +52,10 @@ export function StageView(props: Props) {
   const dragRef = useRef<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const [dragBranch, setDragBranch] = useState<"rise" | "fall">("rise");
-  // 由「定位」进入的状态视图：受力只在停下来的那一刻按状态显示，播放或拖时间轴即退出。
+  // 由「定位」进入的状态视图：把画面停在该临界状态并补上速度方向；受力仍只由「受力分析」开关决定。
   const [stateView, setStateView] = useState(false);
   const viewOptions = useMemo<StageOptions>(
-    () => (stateView ? { ...options, forces: true, vectors: options.vectors || options.stateArrows } : options),
+    () => (stateView ? { ...options, vectors: options.vectors || options.stateArrows } : options),
     [options, stateView],
   );
   const vertical = problem.template === "projectile" && Math.abs(Math.cos((params as { angleDeg: number }).angleDeg * Math.PI / 180)) < 1e-6;
@@ -159,7 +159,7 @@ export function StageView(props: Props) {
     reportPhase(clamped);
   }, [duration, reportPhase]);
 
-  // 「定位」到临界状态：暂停后停在状态视图，由 viewOptions 强制画出此刻的受力。
+  // 「定位」到临界状态：暂停后停在状态视图，由 viewOptions 补上该时刻的速度方向箭头。
   const seekState = useCallback((t: number) => {
     setPlaying(false);
     seek(t);
