@@ -71,8 +71,12 @@ await runProbe("v2-interact", {port:9334, width:1440, height:900}, async ({brows
 
   await browser.clickSelector('button[aria-label="2 倍速"]');
   check("speed2Selected", await browser.evaluate(`document.querySelector('button[role="radio"][aria-label="2 倍速"]')?.getAttribute('aria-checked') === 'true'`));
-  const speedBadge = await browser.evaluate(`[...document.querySelectorAll('[aria-label="动画演示"] span')].map((el) => el.textContent).find((text) => /(?:播放中|已暂停|已结束).*2×/.test(text))`);
-  check("speedBadgeUpdated", !!speedBadge, speedBadge);
+  // The canvas no longer repeats problem type / playback status on top of the stage; speed lives only in the deck.
+  const stageOverlay = await browser.evaluate(`(() => {
+    const box = document.querySelector('[aria-label="动画演示"]');
+    return { badges: box.querySelectorAll('[data-slot="badge"]').length, text: box.textContent.replace(/\\s+/g, " ") };
+  })()`);
+  check("noStatusOverlayOnCanvas", stageOverlay.badges === 0 && !/播放中|已暂停|已结束/.test(stageOverlay.text), stageOverlay);
   if (await pressed("循环播放") !== "true") await browser.clickSelector('button[aria-label="循环播放"]');
   check("loopEnabled", await pressed("循环播放") === "true");
   await browser.clickSelector('button[aria-label="从头播放"]');

@@ -5,7 +5,7 @@ import type { BlockBoardParams, CollisionParams, InclineParams, Problem, SolveRe
 import type { Palette } from "./renderer";
 import { DEFAULT_STAGE } from "./types";
 import { sampleAt } from "./physics";
-import { forceLabel, forceStateOf, sceneTransform } from "./motion";
+import { forceStateOf, sceneTransform } from "./motion";
 
 type SceneView = ReturnType<typeof sceneTransform>;
 
@@ -26,10 +26,7 @@ const overlapArea = (a: Box, b: Box) => Math.max(0, Math.min(a.r, b.r) - Math.ma
 /** 同一个作用点会引出多支箭头，标签先按箭头方向排，挤不下再沿箭头外移或侧移。 */
 const LABEL_SPOTS: [number, number][] = [[0, 0], [11, 0], [0, -12], [0, 12], [22, 0], [11, -12], [11, 12], [22, -12], [22, 12], [0, -24], [0, 24], [33, 0], [11, -24], [11, 24]];
 
-/**
- * 按当前受力阶段绘制受力箭头：常规力用墨色，阶段内新出现的力用鲜艳色。
- * 标签与右侧「对象与临界状态」同源，直接复用 forceLabel。
- */
+/** 按当前受力阶段绘制受力箭头：常规力用墨色，刚出现的力加粗并用鲜艳色。 */
 export function drawForces(
   ctx: CanvasRenderingContext2D,
   view: SceneView,
@@ -54,7 +51,7 @@ export function drawForces(
     const at = anchors[f.body];
     if (!at || !result.bodies.some((item) => item.id === f.body)) continue;
     // 鲜艳色只标「第一次登场」的那一小段窗口，且阶段播过去之后回落墨色；回归的力不再重新标色。
-    const fresh = freshIds.has(f.id) && time - phase.from <= Math.min(0.6, (phase.to - phase.from) * 0.22);
+    const fresh = freshIds.has(f.id) && time - phase.from <= Math.min(0.9, (phase.to - phase.from) * 0.3);
     const color = fresh ? palette.fresh : palette.ink;
     const len = ((f.magnitude > 0 ? f.magnitude : ref) / ref) * target;
     const ux = f.dx, uy = -f.dy;
@@ -62,9 +59,12 @@ export function drawForces(
     ctx.save();
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
-    arrow(ctx, at.x, at.y, x1, y1, fresh ? 8 : 7);
+    // 状态变化点把新出现的力加粗，让「这一步多了哪个力」一眼看到；之后只留粗细一致的正常箭头。
+    ctx.lineWidth = fresh ? 3.4 : 2.2;
+    arrow(ctx, at.x, at.y, x1, y1, fresh ? 9 : 7);
     ctx.restore();
-    const text = forceLabel(f, result, time);
+    // 画布上只写受力符号（G、N₁、f′），括号里的速度读数高中生读不懂，数值留给右栏与题解。
+    const text = f.symbol;
     const align: CanvasTextAlign = ux > 0.3 ? "left" : ux < -0.3 ? "right" : "center";
     const w = ctx.measureText(text).width;
     const nx = -uy, ny = ux;

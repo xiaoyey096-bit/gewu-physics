@@ -40,14 +40,49 @@ export function forceStateOf(result: SolveResult, time: number) {
   };
 }
 
-/** 画布与面板共用的力标签：力符号（该物体的速度符号 此刻速度）。 */
-export function forceLabel(force: ForceVector, result: SolveResult, time: number): string {
-  const body = result.bodies.find((item) => item.id === force.body);
-  if (!body) return force.symbol;
-  const s = sampleAt(body.series, time);
-  const v = Math.abs(s.vy) < 1e-6 ? s.vx : Math.hypot(s.vx, s.vy);
-  const value = Math.abs(v) < 1e-9 ? "0" : `${Number(v.toFixed(Math.abs(v) >= 10 ? 1 : 2))}`;
-  return `${force.symbol}（${body.velocitySymbol} ${value}）`;
+/**
+ * 面板按研究对象分组：高中受力分析的读法是「谁、受到什么力、多大、朝哪」。
+ * 方向描述与该时刻的真实速度比较，速度为零时不硬说加速减速。
+ */
+export function forcesByBody(result: SolveResult, forces: ForceVector[], time: number) {
+  return result.bodies
+    .map((body) => {
+      const s = sampleAt(body.series, time);
+      const speed = Math.hypot(s.vx, s.vy);
+      return {
+        id: body.id,
+        label: body.label,
+        list: forces.filter((force) => force.body === body.id).map((force) => {
+          const dot = s.vx * force.dx + s.vy * force.dy;
+          const trend = speed < 1e-6 || Math.abs(dot) < 1e-6
+            ? ""
+            : Math.abs(dot) < 1e-3 * speed ? "垂直于运动方向" : dot > 0 ? "与运动同向，使它加速" : "与运动反向，使它减速";
+          return { ...force, trend };
+        }),
+      };
+    })
+    .filter((group) => group.list.length > 0);
+}
+
+/** 相对上一阶段发生了什么，写成句子而不是「新」标签；摩擦力性质改变单独说清楚。 */
+export function phaseChanges(result: SolveResult, newForces: ForceVector[], goneForces: ForceVector[]): string[] {
+  const named = (list: ForceVector[]) => list.map((force) => `${force.name} ${force.symbol}`).join("、");
+  const friction = (list: ForceVector[]) => list.filter((force) => /摩擦/.test(force.name));
+  const other = (list: ForceVector[]) => list.filter((force) => !/摩擦/.test(force.name));
+  const lines: string[] = [];
+  // 板块模型两个对象的重力都叫 G，不说清是谁受的力就分不清多了哪个力。
+  for (const body of result.bodies) {
+    const goneFr = friction(goneForces.filter((force) => force.body === body.id));
+    const newFr = friction(newForces.filter((force) => force.body === body.id));
+    const goneOther = other(goneForces.filter((force) => force.body === body.id));
+    const newOther = other(newForces.filter((force) => force.body === body.id));
+    if (goneFr.length && newFr.length) lines.push(`${body.label}的摩擦力换了性质：${named(goneFr)} → ${named(newFr)}`);
+    if (goneFr.length && !newFr.length) lines.push(`${body.label}不再受到：${named(goneFr)}`);
+    if (newFr.length && !goneFr.length) lines.push(`${body.label}开始受到：${named(newFr)}`);
+    if (goneOther.length) lines.push(`${body.label}不再受到：${named(goneOther)}`);
+    if (newOther.length) lines.push(`${body.label}开始受到：${named(newOther)}`);
+  }
+  return lines;
 }
 
 /**

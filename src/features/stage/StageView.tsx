@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } 
 import { criticalStates, motionObject, sceneTransform, stateOf, trajectoryTimeAt } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { VideoExport } from "./VideoExport";
-import { Badge } from "@/components/ui/badge";
 import { drawScene } from "@/lib/renderer";
 import { FALLBACK_PALETTE, readPalette } from "@/lib/palette";
 import { downloadDataUrl } from "@/lib/image";
@@ -50,6 +49,8 @@ export function StageView(props: Props) {
   const reducedMotion = useReducedMotion();
   const duration = result.duration;
   const object = motionObject(problem);
+  // 能拖动的始终是主对象（result.series 的那个），题干里先提到的可能是另一个物体。
+  const dragLabel = result.bodies[0]?.label ?? object.label;
   const dragRef = useRef<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const [dragBranch, setDragBranch] = useState<"rise" | "fall">("rise");
@@ -272,8 +273,8 @@ export function StageView(props: Props) {
           role="img"
           tabIndex={0}
           aria-label={problem.template === "projectile"
-            ? `抛体运动动画：拖动${object.label}沿轨迹定位；方向键微调，Home 回起点，End 到落地`
-            : `${templateLabel(problem)}动画：拖动${object.label}沿轨迹定位；方向键微调，Home 回起点，End 到终点`}
+            ? `抛体运动动画：拖动${dragLabel}沿轨迹定位；方向键微调，Home 回起点，End 到落地`
+            : `${templateLabel(problem)}动画：拖动${dragLabel}沿轨迹定位；方向键微调，Home 回起点，End 到终点`}
           onPointerDown={beginDrag}
           onPointerMove={moveDrag}
           onPointerUp={endDrag}
@@ -285,12 +286,6 @@ export function StageView(props: Props) {
             seek(event.key === "Home" ? 0 : event.key === "End" ? duration : timeRef.current + (["ArrowRight", "ArrowUp"].includes(event.key) ? 1 : -1) * duration / 100);
           }}
         />
-        <div className="pointer-events-none absolute right-2 top-2 flex flex-col items-end gap-1">
-          <Badge variant="secondary" className="px-2 text-[11px]">{templateBadge(problem)} · 解析解</Badge>
-          <span className="rounded bg-background/85 px-1.5 py-0.5 font-mono text-[11px] text-foreground">
-            {playing ? "播放中" : time >= duration && duration > 0 ? "已结束" : "已暂停"} · {speed}×
-          </span>
-        </div>
         <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap items-center gap-2 rounded-lg bg-background/85 px-2 py-1 text-[11px] text-foreground">
           {problem.template === "projectile" ? <>
             <span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--gw-vx)" }} />水平 v₀ₓ</span>
@@ -313,7 +308,7 @@ export function StageView(props: Props) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-        <span>运动对象：{object.label} · 拖住对象沿轨迹定位，松手保持暂停。</span>
+        <span>运动对象：{dragLabel} · 拖住它沿轨迹定位，松手保持暂停。</span>
         {vertical && <div className="flex gap-1" role="group" aria-label="竖直运动拖动分支">
           <Button size="xs" variant={dragBranch === "rise" ? "secondary" : "outline"} aria-pressed={dragBranch === "rise"} onClick={() => setDragBranch("rise")}>上升段拖动</Button>
           <Button size="xs" variant={dragBranch === "fall" ? "secondary" : "outline"} aria-pressed={dragBranch === "fall"} onClick={() => setDragBranch("fall")}>下落段拖动</Button>

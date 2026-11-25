@@ -198,20 +198,43 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   await browser.click("对象与受力", `${RIGHT} [role="tab"]`);
   await browser.wait(`!!document.querySelector(${JSON.stringify(STATES)})`, "临界状态列表出现");
 
+  // 右栏按「谁、受什么力、多大、朝哪」逐状态列出：力行是两个 span（符号 + 名称与数值），
+  // 状态变化行是纯文字（开始受到 / 不再受到 / 换了性质）。
+  const rowsOf = (box) => `[...${box}.querySelectorAll("ul ul li")].map((li) => ({
+      symbol: li.children.length === 2 ? li.firstElementChild.textContent.trim() : "",
+      text: li.children.length === 2 ? li.lastElementChild.textContent.trim() : li.textContent.replace(/\\s+/g, " ").trim(),
+    }))`;
   const states = await browser.evaluate(`(() => {
     const box = document.querySelector(${JSON.stringify(STATES)});
     return {
-      objects: box.querySelector("p")?.textContent.slice(0, 40),
+      objects: box.querySelector("p")?.textContent.slice(0, 80),
       points: box.querySelectorAll(${JSON.stringify(STATE_ITEMS)}).length,
-      labels: [...box.querySelectorAll("ul ul li")].map((li) => li.textContent.trim()),
-      fresh: box.querySelectorAll("span.text-fresh").length,
+      rows: ${rowsOf("box")},
+      ranges: [...box.querySelectorAll("ul li > p")].map((p) => p.textContent.replace(/\\s+/g, " ").trim()),
+      groups: [...box.querySelectorAll("p")].map((p) => p.textContent.trim()).filter((t) => t.endsWith("受到的力")),
+      marks: box.querySelectorAll("span.text-fresh").length,
       seek: [...box.querySelectorAll('button[aria-label^="定位"]')].map((b) => b.getAttribute("aria-label")),
     };
   })()`);
-  log("states", { ...states, labels: states.labels.slice(0, 14) });
-  check("两个对象的力都列出", states.points >= 3 && /滑块（v₁）、木板（v₂）/.test(states.objects ?? ""), states.objects);
-  check("受力标签写成 f′（v₂ 0）", states.labels.some((t) => t.includes("f′（v₂ 0）")), states.labels.slice(0, 12));
-  check("新出现的力标了「新」并用醒目色", states.fresh >= 3, states.fresh);
+  log("states", { ...states, rows: states.rows.slice(0, 14) });
+  const forces = states.rows.filter((r) => r.symbol);
+  const changes = states.rows.filter((r) => !r.symbol && /(开始受到|不再受到|换了性质)/.test(r.text));
+  check("两个对象的力都列出", states.points >= 3 && /滑块和木板，速度分别记作 v₁、v₂/.test(states.objects ?? ""), states.objects);
+  const hasNewton = (r) => /= [\d.]+ N/.test(r.text);
+  const noBracketReading = (r) => !/（/.test(r.text) && /[一-龥]{2,} = /.test(r.text);
+  const saysWho = (r) => /^[^：]{1,8}(开始受到|不再受到|的摩擦力换了性质)：/.test(r.text);
+  check("每个状态列出各对象受到的力与数值", forces.length >= 6 && forces.every(hasNewton), forces.filter((r) => !hasNewton(r)));
+  check("受力写成中文名称，不再用（v₁ 6）这类括号读数", forces.length >= 6 && forces.every(noBracketReading), forces.filter((r) => !noBracketReading(r)));
+  check("列出的是各个运动状态并写明持续时间", states.ranges.length === states.points && states.ranges.every((t) => /这一状态从 [\d.]+ s 持续到 [\d.]+ s/.test(t)), states.ranges);
+  check("状态变化写明是哪个对象的力", changes.length >= 2 && changes.every(saysWho), changes.filter((r) => !saysWho(r)));
+  check("面板不再出现「新」标签与醒目色", states.marks === 0 && !states.rows.some((r) => /新/.test(r.text)), states.marks);
+  // 板块题题干先提到木板，能拖的却是主对象滑块：提示与右栏必须说同一个对象。
+  const dragHint = await browser.evaluate(`(() => ({
+    tip: [...document.querySelectorAll('[aria-label="动画演示"] span')].map((el) => el.textContent.trim()).find((t) => t.startsWith("运动对象：")) ?? null,
+    canvas: document.querySelector(${JSON.stringify(CANVAS)})?.getAttribute("aria-label") ?? null,
+  }))()`);
+  const firstBody = (states.groups[0] ?? "").replace("受到的力", "");
+  check("画布提示的拖动对象就是右栏的第一个研究对象", !!firstBody && (dragHint.tip ?? "").startsWith(`运动对象：${firstBody} `) && (dragHint.canvas ?? "").includes(`拖动${firstBody}沿轨迹定位`), { firstBody, ...dragHint });
   await shot("v8-03-states.png");
 
   // —— 画布：默认只画运动方向，受力是显式打开的叠加层 ——
@@ -263,22 +286,20 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   const freshNext = await pixels(browser, FRESH_RED);
   const afterSeek = await browser.evaluate(`(() => {
     const box = document.querySelector(${JSON.stringify(STATES)});
-    return [...box.querySelectorAll("li")]
-      .filter((li) => li.querySelector("button[aria-label^='临界状态']"))
-      .filter((li) => li.querySelector("span.text-fresh"))
-      .map((li) => li.querySelector("button[aria-label^='临界状态']").textContent.replace(/\\s+/g, " ").slice(0, 22).trim());
+    return [...box.querySelectorAll("ul ul li")].filter((li) => li.children.length === 0)
+      .map((li) => li.textContent.replace(/\\s+/g, " ").trim())
+      .filter((t) => /(开始受到|不再受到|换了性质)/.test(t));
   })()`);
-  log("afterSeek", { seekTarget, freshNext, markedStates: afterSeek });
+  log("afterSeek", { seekTarget, freshNext, changeLines: afterSeek });
   check("定位到下一临界状态仍有醒目色箭头", freshNext > 40, freshNext);
-  check("多个临界阶段都标出新出现的力", afterSeek.length >= 2, afterSeek);
-  // 「新」只属于这个力在整段运动里的第一次登场：消失后又回来的力不能再标一次。
-  // 标签形如「G（v₁ 6）」，两个物体的重力符号都叫 G，所以按「符号 + 速度符号」去重。
-  const debutSymbols = await browser.evaluate(`(() => {
-    const key = (text) => text.split("（")[0] + "（" + (text.split("（")[1] ?? "").split(" ")[0];
-    return [...document.querySelectorAll(${JSON.stringify(`${STATES} span.text-fresh`)})]
-      .map((el) => el.textContent.trim()).filter((text) => text !== "新").map(key);
-  })()`);
-  check("同一个力不会在多个临界状态被标成新出现", debutSymbols.length === new Set(debutSymbols).size, debutSymbols);
+  check("每次受力变化都写成一句中文", afterSeek.length >= 3 && afterSeek.every((t) => t.includes("：") && t.split("：")[1].length > 3), afterSeek);
+  // 「开始受到」只属于这个力在整段运动里的第一次登场：消失后又回来的力不能再列一次。
+  // 两个对象的重力都叫 G，所以要把「谁受到的」一起算进键里。
+  const debuts = afterSeek.map((t) => {
+    const at = t.indexOf("开始受到：");
+    return at < 0 ? [] : t.slice(at + 5).split("、").map((name) => `${t.slice(0, at)}${name}`);
+  }).flat();
+  check("同一个力不会在多个状态被列为开始受到", debuts.length >= 3 && debuts.length === new Set(debuts).size, debuts);
   await shot("v8-05-canvas-seek.png");
 
   // 拖到阶段中后段：受力仍持续绘制，但醒目色要退回墨色，否则整段动画都染红就失去「刚出现」的含义。
@@ -360,10 +381,12 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   await browser.wait(`!!document.querySelector(${JSON.stringify(STATE_ITEMS)})`, "斜面临界状态就绪", 20000);
   const incline = await browser.evaluate(`(() => {
     const box = document.querySelector(${JSON.stringify(STATES)});
-    return { points: box.querySelectorAll(${JSON.stringify(STATE_ITEMS)}).length, labels: [...box.querySelectorAll("ul ul li")].map((li) => li.textContent.trim()) };
+    return { points: box.querySelectorAll(${JSON.stringify(STATE_ITEMS)}).length, rows: ${rowsOf("box")} };
   })()`);
   log("incline", incline);
-  check("斜面停下后滑动摩擦力换成静摩擦力并标注消失", incline.labels.some((t) => /f静（v 0）/.test(t)) && incline.labels.some((t) => /本阶段消失：f/.test(t)), incline.labels.slice(0, 12));
+  check("斜面停下后画出静摩擦力并写明性质改变",
+    incline.rows.some((r) => r.symbol === "f静" && /静摩擦力 = [\d.]+ N/.test(r.text))
+    && incline.rows.some((r) => !r.symbol && /的摩擦力换了性质：滑动摩擦力 f → 静摩擦力 f静/.test(r.text)), incline.rows);
   await shot("v8-06-incline.png");
 
   // —— 迁移只发生一次：用户显式打开受力之后刷新，必须保持打开，不能被迁移反复按回关闭 ——
