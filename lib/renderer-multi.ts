@@ -212,23 +212,6 @@ function drawGrid(ctx: CanvasRenderingContext2D, view: SceneView, palette: Palet
   return boxes;
 }
 
-function drawHud(ctx: CanvasRenderingContext2D, width: number, lines: string[], palette: Palette) {
-  const narrow = width < 560;
-  const rowH = narrow ? 15 : 18;
-  ctx.font = narrow ? "11px ui-monospace, monospace" : "13px ui-monospace, monospace";
-  const boxW = Math.max(...lines.map((line) => ctx.measureText(line).width)) + 18;
-  const boxH = lines.length * rowH + 10;
-  ctx.save();
-  ctx.globalAlpha = 0.78;
-  ctx.fillStyle = palette.surface;
-  panel(ctx, PAD.left - 8, 6, boxW, boxH, 8);
-  ctx.fill();
-  ctx.restore();
-  ctx.fillStyle = palette.fg;
-  lines.forEach((line, i) => ctx.fillText(line, PAD.left + 1, 6 + (narrow ? 16 : 19) + i * rowH));
-  ctx.font = "11px system-ui, sans-serif";
-}
-
 function drawStatCard(ctx: CanvasRenderingContext2D, width: number, palette: Palette, title: string, rows: [string, string, string?][]) {
   const compact = width < 640;
   const rowH = compact ? 15 : 17;
@@ -403,7 +386,7 @@ function drawInclineScene(
     ctx.beginPath();
     ctx.arc(top.x, top.y, 3, 0, Math.PI * 2);
     ctx.fill();
-    const apex = `顶端 L = ${p.L.toFixed(1)} m`;
+    const apex = "顶端";
     obstacles.push(textBox(top.x + 8, top.y - 8, ctx.measureText(apex).width, "left"));
     label(ctx, apex, top.x + 8, top.y - 8, palette.muted, palette.bg);
     if (result.reachedBottom) {
@@ -415,15 +398,11 @@ function drawInclineScene(
   }
 
   if (options.vectors) {
-    const v = Math.hypot(s.vx, s.vy);
-    velocityArrow(ctx, point.x, point.y, s.vx, s.vy, view.scale, palette.vx, `v ${v.toFixed(2)}`, palette.bg);
+    velocityArrow(ctx, point.x, point.y, s.vx, s.vy, view.scale, palette.vx, "v", palette.bg);
   }
   if (options.forces) drawForces(ctx, view, palette, result, time, { block: { x: point.x, y: point.y } }, obstacles);
 
   const vNow = Math.hypot(s.vx, s.vy);
-  drawHud(ctx, width, width < 560
-    ? [`t = ${time.toFixed(2)} s   s = ${travelled.toFixed(2)} m`, `v = ${vNow.toFixed(2)} m/s`]
-    : [`t = ${time.toFixed(2)} s   s = ${travelled.toFixed(2)} m   v = ${vNow.toFixed(2)} m/s`], palette);
 
   if (options.energy) {
     const ek = 0.5 * p.m * vNow * vNow;
@@ -470,13 +449,13 @@ function drawBlockBoardScene(
       arrow(ctx, x1, y, x0, y, 5);
       ctx.restore();
       ctx.textAlign = "center";
-      const slipText = `Δs = ${slip.toFixed(2)} m`;
+      const slipText = "Δs";
       obstacles.push(textBox((x0 + x1) / 2, y + 13, ctx.measureText(slipText).width, "center"));
       label(ctx, slipText, (x0 + x1) / 2, y + 13, palette.info, palette.bg);
       ctx.textAlign = "left";
     }
     ctx.textAlign = "center";
-    const blockName = `${block.label} m = ${p.m} kg`;
+    const blockName = block.label;
     const blockNameY = blockPoint.y - block.h * view.scale;
     obstacles.push(textBox(blockPoint.x, blockNameY, ctx.measureText(blockName).width, "center"));
     label(ctx, blockName, blockPoint.x, blockNameY, palette.muted, palette.bg);
@@ -484,8 +463,8 @@ function drawBlockBoardScene(
   }
 
   if (options.vectors) {
-    velocityArrow(ctx, blockPoint.x, blockPoint.y, blockState.vx, 0, view.scale, palette.vx, `v₁ ${blockState.vx.toFixed(2)}`, palette.bg);
-    velocityArrow(ctx, boardPoint.x, boardPoint.y - 6, boardState.vx, 0, view.scale, palette.info, `v₂ ${boardState.vx.toFixed(2)}`, palette.bg);
+    velocityArrow(ctx, blockPoint.x, blockPoint.y, blockState.vx, 0, view.scale, palette.vx, "v₁", palette.bg);
+    velocityArrow(ctx, boardPoint.x, boardPoint.y - 6, boardState.vx, 0, view.scale, palette.info, "v₂", palette.bg);
   }
   if (options.forces) {
     drawForces(ctx, view, palette, result, time, {
@@ -493,10 +472,6 @@ function drawBlockBoardScene(
       board: { x: boardPoint.x, y: boardPoint.y },
     }, obstacles);
   }
-
-  drawHud(ctx, width, width < 560
-    ? [`t = ${time.toFixed(2)} s`, `v块 = ${blockState.vx.toFixed(2)}  v板 = ${boardState.vx.toFixed(2)}`, `木板 M = ${p.M} kg · L = ${p.L} m`]
-    : [`t = ${time.toFixed(2)} s   v块 = ${blockState.vx.toFixed(2)} m/s   v板 = ${boardState.vx.toFixed(2)} m/s`, `木板 M = ${p.M} kg · L = ${p.L} m   μ = ${p.mu}`], palette);
 
   if (options.energy) {
     drawStatCard(ctx, width, palette, "能量 · J", [
@@ -527,8 +502,8 @@ function drawCollisionScene(
   if (options.markers) {
     ctx.textAlign = "center";
     const names: [string, number, number][] = [
-      [`A · m₁ ${p.m1} kg`, pa.x, pa.y - a.h * view.scale],
-      [`B · m₂ ${p.m2} kg`, pb.x, pb.y - b.h * view.scale],
+      ["A", pa.x, pa.y - a.h * view.scale],
+      ["B", pb.x, pb.y - b.h * view.scale],
     ];
     for (const [text, x, y] of names) {
       obstacles.push(textBox(x, y, ctx.measureText(text).width, "center"));
@@ -543,16 +518,12 @@ function drawCollisionScene(
   }
 
   if (options.vectors) {
-    velocityArrow(ctx, pa.x, pa.y, sa.vx, 0, view.scale, palette.vx, `v₁ ${sa.vx.toFixed(2)}`, palette.bg);
-    velocityArrow(ctx, pb.x, pb.y, sb.vx, 0, view.scale, palette.info, `v₂ ${sb.vx.toFixed(2)}`, palette.bg);
+    velocityArrow(ctx, pa.x, pa.y, sa.vx, 0, view.scale, palette.vx, "v₁", palette.bg);
+    velocityArrow(ctx, pb.x, pb.y, sb.vx, 0, view.scale, palette.info, "v₂", palette.bg);
   }
   if (options.forces) {
     drawForces(ctx, view, palette, result, time, { a: { x: pa.x, y: pa.y }, b: { x: pb.x, y: pb.y } }, obstacles);
   }
-
-  drawHud(ctx, width, width < 560
-    ? [`t = ${time.toFixed(2)} s`, `vA ${sa.vx.toFixed(2)}  vB ${sb.vx.toFixed(2)}`]
-    : [`t = ${time.toFixed(2)} s   vA = ${sa.vx.toFixed(2)} m/s   vB = ${sb.vx.toFixed(2)} m/s`], palette);
 
   if (options.energy) {
     const now = time >= result.tHit && result.hit;

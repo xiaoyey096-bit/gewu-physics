@@ -261,7 +261,7 @@ export function drawScene(
       ctx.moveTo(ax, ay - 5); ctx.lineTo(ax, ay + 5);
       ctx.stroke();
       ctx.textAlign = "center";
-      label(ctx, `最高点 ${result.maxHeight.toFixed(2)} m`, ax, ay - 12, palette.muted, palette.bg);
+      label(ctx, "最高点", ax, ay - 12, palette.muted, palette.bg);
       ctx.textAlign = "left";
       const d = Math.abs(cur.t - result.apexTime);
       if (d < 0.22) pulse(ctx, ax, ay, 1 - d / 0.22, palette.vy, 22);
@@ -272,7 +272,7 @@ export function drawScene(
       ctx.arc(X(result.range), oy, 3.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.textAlign = "right";
-      label(ctx, `射程 ${result.range.toFixed(2)} m`, X(result.range) - 8, oy - 26, palette.muted, palette.bg);
+      label(ctx, "射程", X(result.range) - 8, oy - 26, palette.muted, palette.bg);
       ctx.textAlign = "left";
     }
     if (cur.t > T - 0.34) {
@@ -312,7 +312,7 @@ export function drawScene(
     arrow(ctx, dimX, Y(result.maxHeight), dimX, Y(0), 6);
     ctx.restore();
     ctx.textAlign = "left";
-    label(ctx, `H = ${result.maxHeight.toFixed(2)} m`, dimX + 7, (Y(0) + Y(result.maxHeight)) / 2 + 4, palette.vy, palette.bg);
+    label(ctx, "H", dimX + 7, (Y(0) + Y(result.maxHeight)) / 2 + 4, palette.vy, palette.bg);
     if (result.range * scale > 60) {
       const dy = oy + 30;
       ctx.save();
@@ -324,7 +324,7 @@ export function drawScene(
       arrow(ctx, X(result.range), dy, X(0), dy, 6);
       ctx.restore();
       ctx.textAlign = "center";
-      label(ctx, `X = ${result.range.toFixed(2)} m`, (X(0) + X(result.range)) / 2, dy + 14, palette.vx, palette.bg);
+      label(ctx, "X", (X(0) + X(result.range)) / 2, dy + 14, palette.vx, palette.bg);
     }
     ctx.textAlign = "right";
     ctx.fillStyle = palette.muted;
@@ -391,43 +391,6 @@ export function drawScene(
   objectPath();
   ctx.stroke();
   if (options.forces) drawForces(ctx, view, palette, result, time, { primary: { x: bx, y: by } });
-
-  // HUD
-  const speed = Math.hypot(cur.vx, cur.vy);
-  const narrow = width < 560;
-  const lines = narrow
-    ? [
-        `t = ${cur.t.toFixed(2)} s   x = ${cur.x.toFixed(2)} m`,
-        `y = ${Math.max(0, cur.y).toFixed(2)} m   v = ${speed.toFixed(2)} m/s`,
-      ]
-    : [`t = ${cur.t.toFixed(2)} s   x = ${cur.x.toFixed(2)} m   y = ${Math.max(0, cur.y).toFixed(2)} m   v = ${speed.toFixed(2)} m/s`];
-  // 轨迹方程与画面数值同源，提醒学生动画不是预设关键帧；放进 HUD 底色里才不会压到抛出点。
-  const eq = narrow ? null : "x = v₀·cosθ·t    y = h₀ + v₀·sinθ·t − g·t²/2";
-  const rowH = narrow ? 15 : 18;
-  ctx.font = narrow ? "11px ui-monospace, monospace" : "13px ui-monospace, monospace";
-  const hudW = Math.max(...lines.map((l) => ctx.measureText(l).width));
-  ctx.font = "11px ui-monospace, monospace";
-  const boxW = Math.max(hudW, eq ? ctx.measureText(eq).width : 0) + 18;
-  const boxH = (lines.length + (eq ? 1 : 0)) * rowH + 10;
-  ctx.save();
-  ctx.globalAlpha = 0.78;
-  ctx.fillStyle = palette.surface;
-  ctx.beginPath();
-  if (typeof ctx.roundRect === "function") ctx.roundRect(PAD.left - 8, 6, boxW, boxH, 8);
-  else ctx.rect(PAD.left - 8, 6, boxW, boxH);
-  ctx.fill();
-  ctx.restore();
-  ctx.fillStyle = palette.fg;
-  ctx.font = narrow ? "11px ui-monospace, monospace" : "13px ui-monospace, monospace";
-  lines.forEach((line, i) => {
-    ctx.fillText(line, PAD.left + 1, 6 + (narrow ? 16 : 19) + i * rowH);
-  });
-  if (eq) {
-    ctx.font = "11px ui-monospace, monospace";
-    ctx.fillStyle = palette.muted;
-    ctx.fillText(eq, PAD.left + 1, 6 + 19 + lines.length * rowH);
-  }
-  ctx.font = "11px system-ui, sans-serif";
 
   // 能量视角：轨迹上方的空白用来实时验证机械能守恒（按单位质量计，J/kg）
   if (options.energy && width >= 340) {
