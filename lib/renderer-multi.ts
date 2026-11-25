@@ -26,7 +26,7 @@ const overlapArea = (a: Box, b: Box) => Math.max(0, Math.min(a.r, b.r) - Math.ma
 /** 同一个作用点会引出多支箭头，标签先按箭头方向排，挤不下再沿箭头外移或侧移。 */
 const LABEL_SPOTS: [number, number][] = [[0, 0], [11, 0], [0, -12], [0, 12], [22, 0], [11, -12], [11, 12], [22, -12], [22, 12], [0, -24], [0, 24], [33, 0], [11, -24], [11, 24]];
 
-/** 按当前受力阶段绘制受力箭头：常规力用墨色，刚出现的力加粗并用鲜艳色。 */
+/** 按当前受力阶段绘制受力箭头：统一墨色，力随阶段增减。 */
 export function drawForces(
   ctx: CanvasRenderingContext2D,
   view: SceneView,
@@ -36,9 +36,8 @@ export function drawForces(
   anchors: Record<string, { x: number; y: number }>,
   obstacles: Box[] = [],
 ): void {
-  const { phase, newForces } = forceStateOf(result, time);
+  const { phase } = forceStateOf(result, time);
   if (!phase || !phase.forces.length) return;
-  const freshIds = new Set(newForces.map((f) => f.id));
   const target = Math.min(58, Math.max(30, view.scale * 0.62));
   const sizes = phase.forces.map((f) => f.magnitude).filter((m) => m > 0);
   const ref = sizes.length ? Math.max(...sizes) : 1;
@@ -47,22 +46,15 @@ export function drawForces(
   ctx.save();
   ctx.font = "11px ui-monospace, monospace";
   ctx.lineWidth = 2.2;
+  ctx.strokeStyle = palette.ink;
+  ctx.fillStyle = palette.ink;
   for (const f of phase.forces) {
     const at = anchors[f.body];
     if (!at || !result.bodies.some((item) => item.id === f.body)) continue;
-    // 鲜艳色只标「第一次登场」的那一小段窗口，且阶段播过去之后回落墨色；回归的力不再重新标色。
-    const fresh = freshIds.has(f.id) && time - phase.from <= Math.min(0.9, (phase.to - phase.from) * 0.3);
-    const color = fresh ? palette.fresh : palette.ink;
     const len = ((f.magnitude > 0 ? f.magnitude : ref) / ref) * target;
     const ux = f.dx, uy = -f.dy;
     const x1 = at.x + ux * len, y1 = at.y + uy * len;
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    // 状态变化点把新出现的力加粗，让「这一步多了哪个力」一眼看到；之后只留粗细一致的正常箭头。
-    ctx.lineWidth = fresh ? 3.4 : 2.2;
-    arrow(ctx, at.x, at.y, x1, y1, fresh ? 9 : 7);
-    ctx.restore();
+    arrow(ctx, at.x, at.y, x1, y1);
     // 画布上只写受力符号（G、N₁、f′），括号里的速度读数高中生读不懂，数值留给右栏与题解。
     const text = f.symbol;
     const align: CanvasTextAlign = ux > 0.3 ? "left" : ux < -0.3 ? "right" : "center";
@@ -93,9 +85,7 @@ export function drawForces(
     }
     placed.push(box);
     ctx.textAlign = align;
-    ctx.font = fresh ? "bold 11px ui-monospace, monospace" : "11px ui-monospace, monospace";
-    label(ctx, text, spot.x, spot.y, color, palette.bg);
-    ctx.font = "11px ui-monospace, monospace";
+    label(ctx, text, spot.x, spot.y, palette.ink, palette.bg);
   }
   ctx.restore();
   ctx.textAlign = "left";

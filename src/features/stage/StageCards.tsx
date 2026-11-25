@@ -4,7 +4,7 @@ import type { BlockBoardParams, CollisionParams, ForceVector, InclineParams, Pro
 import { cn } from "@/lib/utils";
 
 // 动画上方的读数卡片：能量与受力按分类各占一小块，画布只留符号。
-// 受力卡片列出整道题出现过的力：当前阶段的实心，已经退场的虚化，刚登场的染醒目色。
+// 受力卡片列出整道题出现过的力：当前阶段作用的实心，已经退场的虚化。
 
 interface EnergyRow { label: string; text: string; color?: string }
 
@@ -103,16 +103,13 @@ const FORCE_CATEGORIES: { id: string; label: string; match: (name: string) => bo
   { id: "other", label: "其他", match: () => true },
 ];
 
-interface ForceChip { force: ForceVector; active: boolean; fresh: boolean; bodyLabel: string }
+interface ForceChip { force: ForceVector; active: boolean; bodyLabel: string }
 interface ForceGroup { id: string; label: string; list: ForceChip[] }
 
 function forceGroups(result: SolveResult, time: number): ForceGroup[] {
-  const { phase, newForces } = forceStateOf(result, time);
+  const { phase } = forceStateOf(result, time);
   if (!phase) return [];
   const active = new Set(phase.forces.map((force) => force.id));
-  // 与画布同一条规则：只有阶段开头一小段标醒目色，播过去就回落。
-  const debut = time - phase.from <= Math.min(0.9, (phase.to - phase.from) * 0.3);
-  const fresh = new Set(debut ? newForces.map((force) => force.id) : []);
   const bodies = new Map(result.bodies.map((body) => [body.id, body.label]));
   const all = new Map<string, ForceVector>();
   for (const item of result.forcePhases ?? []) {
@@ -121,7 +118,7 @@ function forceGroups(result: SolveResult, time: number): ForceGroup[] {
   const buckets = FORCE_CATEGORIES.map<ForceChip[]>(() => []);
   for (const force of all.values()) {
     const index = FORCE_CATEGORIES.findIndex((category) => category.match(force.name));
-    buckets[index].push({ force, active: active.has(force.id), fresh: fresh.has(force.id), bodyLabel: bodies.get(force.body) ?? "" });
+    buckets[index].push({ force, active: active.has(force.id), bodyLabel: bodies.get(force.body) ?? "" });
   }
   return FORCE_CATEGORIES.map((category, index) => ({ id: category.id, label: category.label, list: buckets[index] }))
     .filter((group) => group.list.length > 0);
@@ -160,20 +157,18 @@ function ForceBlock({ group, showBody }: { group: ForceGroup; showBody: boolean 
     <section aria-label={`受力卡片 ${group.label}`} className="grow shrink-0 basis-[150px] rounded-xl border border-border bg-background px-2.5 py-2 sm:grow-0">
       <h3 className="text-[11px] font-medium text-muted-foreground">{group.label}</h3>
       <div className="mt-1 flex flex-wrap gap-1">
-        {group.list.map(({ force, active, fresh, bodyLabel }) => (
+        {group.list.map(({ force, active, bodyLabel }) => (
           <span
             key={force.id}
             data-force={force.id}
             data-active={active}
-            data-fresh={fresh}
             title={showBody ? `${force.name} · ${bodyLabel}` : force.name}
             className={cn(
               "inline-flex items-baseline gap-1 rounded-md border px-1.5 py-0.5",
               active ? "border-border bg-card" : "border-dashed border-border opacity-40",
-              fresh && "border-fresh/60 bg-fresh/10",
             )}
           >
-            <span className={cn("font-mono text-[11px]", fresh ? "font-semibold text-fresh" : "text-ink")}>{force.symbol}</span>
+            <span className="font-mono text-[11px] text-ink">{force.symbol}</span>
             {showBody && <span className="text-[9px] text-muted-foreground">{bodyLabel}</span>}
           </span>
         ))}

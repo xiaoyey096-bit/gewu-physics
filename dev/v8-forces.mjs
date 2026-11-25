@@ -76,6 +76,27 @@ async function pixels(browser, test) {
 }
 const INK = "r < 45 && g < 45 && b < 60 && d[i + 3] > 40";
 
+// 受力箭头统一墨色，看颜色分不出「画没画受力」，改为截获 fillText：力符号真的落到画布上才算数。
+async function armText(browser) {
+  return browser.evaluate(`(() => {
+    const proto = CanvasRenderingContext2D.prototype;
+    if (!proto.__gewuText) {
+      proto.__gewuText = [];
+      const fill = proto.fillText;
+      proto.fillText = function (text) { proto.__gewuText.push(String(text)); return fill.apply(this, arguments); };
+    }
+    proto.__gewuText.length = 0;
+    return true;
+  })()`);
+}
+async function canvasForceHits(browser, symbols) {
+  return browser.evaluate(`(() => {
+    const seen = CanvasRenderingContext2D.prototype.__gewuText ?? [];
+    const want = ${JSON.stringify(symbols)};
+    return [...new Set(seen.filter((t) => want.includes(t)))];
+  })()`);
+}
+
 await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expect, check, shot, log }) => {
   await browser.goto(BASE);
   const seeded = await browser.evaluate(SEED_SCRIPT);
@@ -208,7 +229,6 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
       lines: ${bodyLines("box")},
       ranges: [...box.querySelectorAll("ul li > p")].map((p) => p.textContent.replace(/\\s+/g, " ").trim()).filter((t) => t.startsWith("这一状态")),
       toggle: box.querySelector('button[aria-label="显示受力大小"]')?.getAttribute("aria-pressed") ?? null,
-      marks: box.querySelectorAll("span.text-fresh").length,
       text: box.textContent,
       seek: [...box.querySelectorAll('button[aria-label^="定位"]')].map((b) => b.getAttribute("aria-label")),
     };
@@ -219,7 +239,7 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   check("默认只写符号，数值括号由顶端开关控制", states.toggle === "false" && !states.lines.some((t) => /（/.test(t)), { toggle: states.toggle, lines: states.lines.slice(0, 4) });
   check("不再重复列出受力明细与变化句", !/开始受到|不再受到|换性质|受到的力/.test(states.text) && !/下面按时间顺序|只把画面停在该时刻/.test(states.text), states.text.slice(0, 220));
   check("列出的是各个运动状态并写明持续时间", states.ranges.length === states.points && states.ranges.every((t) => /这一状态从 [\d.]+ s 持续到 [\d.]+ s/.test(t)), states.ranges);
-  check("面板不再出现「新」标签与醒目色", states.marks === 0 && !states.lines.some((t) => /新/.test(t)), states.marks);
+  check("面板不再出现「新」标签", !states.lines.some((t) => /新/.test(t)), states.lines.slice(0, 4));
   // 板块题题干先提到木板，能拖的却是主对象滑块：提示与右栏必须说同一个对象。
   const dragHint = await browser.evaluate(`(() => ({
     tip: [...document.querySelectorAll('[aria-label="动画演示"] span')].map((el) => el.textContent.trim()).find((t) => t.startsWith("运动对象：")) ?? null,
@@ -241,7 +261,7 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
       groups: [...root.querySelectorAll('[aria-label^="受力卡片"]')].map((g) => g.getAttribute("aria-label").replace("受力卡片 ", "")),
       chips: [...root.querySelectorAll("[data-force]")].map((el) => ({
         id: el.dataset.force, symbol: el.querySelector("span")?.textContent.trim() ?? "",
-        active: el.dataset.active === "true", fresh: el.dataset.fresh === "true",
+        active: el.dataset.active === "true",
         dimmed: Number(getComputedStyle(el).opacity) < 0.6,
       })),
     };
@@ -249,12 +269,12 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   await browser.evaluate(`document.querySelector(${JSON.stringify(STATES)})?.querySelector('button[aria-label^="定位"]')?.click()`);
   await sleep(400);
   const cards = await stageReadout();
-  log("stageCards", { ...cards, chips: cards?.chips.map((c) => `${c.symbol}:${c.active ? "on" : "off"}${c.fresh ? "·新" : ""}`) });
+  log("stageCards", { ...cards, chips: cards?.chips.map((c) => `${c.symbol}:${c.active ? "on" : "off"}${c.dimmed ? "·淡" : ""}`) });
   const symbols = (cards?.chips ?? []).map((c) => c.symbol);
   check("读数卡片排在动画上方，并含能量卡片", !!cards?.above && /Σ [\d.]+/.test(cards?.energy ?? ""), { above: cards?.above, energy: cards?.energy });
   check("受力卡片按重力/弹力/摩擦力分类", ["重力", "弹力", "摩擦力"].every((name) => (cards?.groups ?? []).includes(name)), cards?.groups);
   check("卡片列出两物体的全部力符号", ["G", "N₁", "N₂", "f", "f′", "f地"].every((symbol) => symbols.includes(symbol)), [...new Set(symbols)]);
-  check("t=0 时现役的力实心带醒目色，未登场的静摩擦力虚化", (cards?.chips ?? []).filter((c) => c.active).length >= 6 && (cards?.chips ?? []).filter((c) => c.active).every((c) => c.fresh && !c.dimmed) && (cards?.chips ?? []).filter((c) => !c.active).every((c) => c.dimmed), cards?.chips);
+  check("t=0 时现役的力实心，未登场的静摩擦力与地面摩擦力虚化", (cards?.chips ?? []).filter((c) => c.active).length >= 6 && (cards?.chips ?? []).filter((c) => c.active).every((c) => !c.dimmed) && (cards?.chips ?? []).filter((c) => !c.active).every((c) => c.dimmed), cards?.chips);
 
   // 顶端「受力大小」开关：打开后每个力后跟（数值），与运动方向相反的力带负号。
   const FORCE_SIZE = `${STATES} button[aria-label="显示受力大小"]`;
@@ -276,30 +296,27 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   check("再点一次回到只有符号", backToSymbols.pressed === "false" && !backToSymbols.lines.some((t) => /（/.test(t)), backToSymbols.lines.slice(0, 4));
 
   // —— 画布：默认只画运动方向，受力是显式打开的叠加层 ——
-  // 用比醒目色更严的红，避开合速度 #c81e5a 被算成受力箭头。
-  const FRESH_RED = "r > 190 && g < 70 && b < 70 && d[i + 3] > 40";
   const TEAL = "r < 40 && g > 100 && g < 170 && b > 90 && b < 160";
   const locateFirst = () => browser.evaluate(`(() => { const b = document.querySelector(${JSON.stringify(STATES)})?.querySelector('button[aria-label^="定位"]'); b?.click(); return b?.getAttribute("aria-label") ?? null; })()`);
 
-  const idleFresh = await pixels(browser, FRESH_RED);
   const DECK_FORCE = 'div[aria-label="动画控制区"] button[aria-label="受力分析"]';
   const RIGHT_FORCE = `${RIGHT} button[aria-label="受力分析"]`;
   const idleToggles = await browser.evaluate(`(() => ({
     deck: document.querySelector(${JSON.stringify(DECK_FORCE)})?.getAttribute("aria-pressed") ?? null,
     panel: document.querySelector(${JSON.stringify(RIGHT_FORCE)})?.getAttribute("aria-pressed") ?? null,
   }))()`);
-  log("idleForces", { idleFresh, ...idleToggles });
+  log("idleForces", idleToggles);
   check("控制条与右栏都有「受力分析」，且默认关闭", idleToggles.deck === "false" && idleToggles.panel === "false", idleToggles);
-  check("默认画布不出现受力箭头", idleFresh < 30, idleFresh);
 
   // 定位只把画面停在该时刻：物体描边还在，但不画受力。
+  await armText(browser);
   const firstState = await locateFirst();
   await sleep(600);
   const ink = await pixels(browser, INK);
-  const locateFresh = await pixels(browser, FRESH_RED);
-  log("locateWithoutForces", { firstState, ink, locateFresh });
+  const offHits = await canvasForceHits(browser, symbols);
+  log("locateWithoutForces", { firstState, ink, offHits });
   check("物体与常规标注用墨色描边", ink > 400, ink);
-  check("未打开受力分析时，定位也不画受力箭头", locateFresh < 30, locateFresh);
+  check("默认画布不出现受力箭头", offHits.length === 0, offHits);
   await shot("v8-04-canvas-locate-no-forces.png");
 
   // 控制条上的「受力分析」直接叠加受力，不必先切右栏页签；两处开关共用同一份偏好，状态要同步。
@@ -311,35 +328,28 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   }))()`);
   log("deckToggleSync", synced);
   check("控制条打开受力后，右栏「受力分析」同步为开", synced.deck === "true" && synced.panel === "true", synced);
+  await armText(browser);
   await locateFirst();
   await sleep(600);
-  const freshStart = await pixels(browser, FRESH_RED);
-  log("locateWithForces", { freshStart });
-  check("打开受力分析后，定位画出新受力箭头", freshStart > 300, freshStart);
+  const withHits = await canvasForceHits(browser, symbols);
+  log("locateWithForces", { withHits });
+  check("打开受力分析后，定位画出受力箭头", withHits.length >= 4, withHits);
   await shot("v8-05-canvas-locate-forces.png");
 
   const seekTarget = states.seek.find((label) => /定位两者停下|定位达到共同速度|定位滑块停在/.test(label)) ?? states.seek[1];
+  await armText(browser);
   await browser.clickSelector(`${RIGHT} button[aria-label="${seekTarget}"]`);
   await sleep(600);
-  const freshNext = await pixels(browser, FRESH_RED);
-  log("afterSeek", { seekTarget, freshNext });
-  check("定位到下一临界状态仍有醒目色箭头", freshNext > 40, freshNext);
+  const nextHits = await canvasForceHits(browser, symbols);
+  log("afterSeek", { seekTarget, nextHits });
+  check("定位到下一临界状态仍画出受力箭头", nextHits.length > 0, nextHits);
   await shot("v8-05-canvas-seek.png");
 
-  // 状态推进后卡片跟着换：滑动摩擦力退场虚化，静摩擦力登场实心，与画布上的醒目色同步。
+  // 状态推进后卡片跟着换：滑动摩擦力退场虚化，静摩擦力登场实心。
   const nextCards = await stageReadout();
   const chipOf = (id) => nextCards?.chips.find((c) => c.id === id);
-  log("nextCards", { seek: seekTarget, chips: nextCards?.chips.map((c) => `${c.symbol}:${c.active ? "on" : "off"}${c.fresh ? "·新" : ""}${c.dimmed ? "·淡" : ""}`) });
+  log("nextCards", { seek: seekTarget, chips: nextCards?.chips.map((c) => `${c.symbol}:${c.active ? "on" : "off"}${c.dimmed ? "·淡" : ""}`) });
   check("换阶段后滑动摩擦力虚化、静摩擦力实心", !!chipOf("block-f")?.dimmed && !!chipOf("block-fs")?.active && !chipOf("block-fs")?.dimmed && !!chipOf("board-f")?.dimmed, { slide: chipOf("block-f"), stat: chipOf("block-fs"), boardSlide: chipOf("board-f") });
-
-  // 拖到阶段中后段：受力仍持续绘制，但醒目色要退回墨色，否则整段动画都染红就失去「刚出现」的含义。
-  await browser.dragSlider("动画时间轴", 0.78);
-  await sleep(400);
-  const settled = await pixels(browser, FRESH_RED);
-  const settledInk = await pixels(browser, INK);
-  log("settled", { settled, settledInk });
-  check("阶段播过后受力仍在、醒目色退回墨色", settled < 120 && settledInk > 400, { settled, settledInk });
-  await shot("v8-06-canvas-settled.png");
 
   // —— 「状态箭头」只管定位时的速度箭头，受力归「受力分析」单独控制 ——
   const setToggle = async (label, want) => {
@@ -356,23 +366,26 @@ await runProbe("v8-forces", { width: 1440, height: 900 }, async ({ browser, expe
   // 能量条的分量色与水平速度箭头同色，先关掉，免得把条当成箭头。
   await setToggle("能量", false);
   // 此刻右栏停在「动画参数」页签，临界状态列表不可点，用脚本触发同一个「定位」按钮。
+  await armText(browser);
   await locateFirst();
   await sleep(400);
   const withArrows = await pixels(browser, TEAL);
-  const withForces = await pixels(browser, FRESH_RED);
+  const withForces = await canvasForceHits(browser, symbols);
+  await armText(browser);
   await setToggle("状态箭头", false);
   await sleep(400);
   const withoutArrows = await pixels(browser, TEAL);
-  const stillForces = await pixels(browser, FRESH_RED);
+  const stillForces = await canvasForceHits(browser, symbols);
   // 再把受力也关掉：定位画面只剩物体与轨迹，两类箭头都不该出现。
+  await armText(browser);
   await setToggle("受力分析", false);
   await locateFirst();
   await sleep(400);
   const plainArrows = await pixels(browser, TEAL);
-  const plainForces = await pixels(browser, FRESH_RED);
-  log("stateArrows", { withArrows, withForces, withoutArrows, stillForces, plainArrows, plainForces });
-  check("定位时默认附带速度箭头，关掉状态箭头不影响受力", withArrows > 60 && withoutArrows < 20 && stillForces > 100, { withArrows, withoutArrows, stillForces });
-  check("关掉受力分析后定位只剩运动要素", plainArrows < 20 && plainForces < 30, { plainArrows, plainForces });
+  const plainForces = await canvasForceHits(browser, symbols);
+  log("stateArrows", { withArrows, withoutArrows, plainArrows, withForces, stillForces, plainForces });
+  check("定位时默认附带速度箭头，关掉状态箭头不影响受力", withArrows > 60 && withoutArrows < 20 && stillForces.length > 0, { withArrows, withoutArrows, stillForces });
+  check("关掉受力分析后定位只剩运动要素", plainArrows < 20 && plainForces.length === 0, { plainArrows, plainForces });
   await shot("v8-07-state-arrows.png");
 
   // —— 光滑地面板块题：木板从 t=0 就以 1 m/s² 加速，早期读数不能因为箭头短就整条不画 ——

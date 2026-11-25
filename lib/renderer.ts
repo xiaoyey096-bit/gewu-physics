@@ -23,8 +23,6 @@ export interface Palette {
   ink: string;
   /** 物体填充色：接近不上色。 */
   body: string;
-  /** 临界状态新出现的力，用鲜艳色标出。 */
-  fresh: string;
 }
 
 export interface RenderState {

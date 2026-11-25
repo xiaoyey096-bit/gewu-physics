@@ -50,7 +50,6 @@
   --gw-info: #2f6df6;
   --gw-ink: #141821;
   --gw-body: #ffffff;
-  --gw-fresh: #d92b2b;
   --gw-success: #3f8f29;
   --gw-warning: #b45309;
   --gw-danger: #d92d20;
@@ -126,7 +125,6 @@
   --color-vy: var(--gw-vy);
   --color-v: var(--gw-v);
   --color-info: var(--gw-info);
-  --color-fresh: var(--gw-fresh);
   --color-ink: var(--gw-ink);
   --color-success: var(--gw-success);
   --color-warning: var(--gw-warning);

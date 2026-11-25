@@ -15,7 +15,6 @@ export const FALLBACK_PALETTE: Palette = {
   info: "#2f6df6",
   ink: "#141821",
   body: "#ffffff",
-  fresh: "#d92b2b",
 };
 
 export function readPalette(): Palette {
@@ -36,6 +35,5 @@ export function readPalette(): Palette {
     info: get("--gw-info", FALLBACK_PALETTE.info),
     ink: get("--gw-ink", FALLBACK_PALETTE.ink),
     body: get("--gw-body", FALLBACK_PALETTE.body),
-    fresh: get("--gw-fresh", FALLBACK_PALETTE.fresh),
   };
 }

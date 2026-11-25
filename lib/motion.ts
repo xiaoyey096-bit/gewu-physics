@@ -18,26 +18,14 @@ export function stateOf(result: SolveResult, time: number) {
   return sampleAt(result.series, time);
 }
 
-/**
- * 某时刻所处的受力阶段，以及新出现 / 消失的力。
- * 「新出现」只认这个力在整段运动里的第一次登场：中途消失又回归的力沿用首次的常规色，
- * 否则同一个力每次回来都要变一次红，学生反而以为它是另一个力。
- */
+/** 某时刻所处的受力阶段及其作用的力。 */
 export function forceStateOf(result: SolveResult, time: number) {
   const phases = result.forcePhases ?? [];
-  if (!phases.length) return { phase: null as ForcePhase | null, newForces: [] as ForceVector[], goneForces: [] as ForceVector[], forces: [] as ForceVector[] };
+  if (!phases.length) return { phase: null as ForcePhase | null, forces: [] as ForceVector[] };
   let index = phases.findIndex((p) => time >= p.from - 1e-6 && time < p.to - 1e-6);
   if (index < 0) index = time < 0 ? 0 : phases.length - 1;
   const phase = phases[index];
-  const previous = phases[index - 1];
-  const present = new Set(phase.forces.map((f) => f.id));
-  const debut = (id: string) => phases.findIndex((p) => p.forces.some((f) => f.id === id)) === index;
-  return {
-    phase,
-    forces: phase.forces,
-    newForces: phase.forces.filter((f) => phase.added.includes(f.id) && debut(f.id)),
-    goneForces: previous ? previous.forces.filter((f) => !present.has(f.id)) : [],
-  };
+  return { phase, forces: phase.forces };
 }
 
 /**
@@ -91,18 +79,7 @@ export function criticalStates(problem: Problem, result: SolveResult) {
       return true;
     })
     .sort((a, b) => a.time - b.time)
-    .map((point) => {
-      const forces = forceStateOf(result, point.time);
-      // 「新出现 / 消失」只属于受力阶段真正开始的时刻；同一阶段内的事件点（最高点、落地前）不重复标注。
-      const atBoundary = !!forces.phase && Math.abs(forces.phase.from - point.time) < 5e-3;
-      return {
-        ...point,
-        ...forces,
-        newForces: atBoundary ? forces.newForces : [],
-        goneForces: atBoundary ? forces.goneForces : [],
-        ...stateOfPoint(point.time),
-      };
-    });
+    .map((point) => ({ ...point, ...forceStateOf(result, point.time), ...stateOfPoint(point.time) }));
 }
 
 function projectilePoints(problem: Problem, result: SolveResult) {
