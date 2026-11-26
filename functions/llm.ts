@@ -1,9 +1,9 @@
-// DashScope（阿里云百炼）OpenAI 兼容端点的共用调用层。
-// 固定可信服务端目标 + 超时 + 候选模型顺序回退；绝不回显上游异常或密钥。
+// 火山方舟（Ark）OpenAI 兼容端点的共用调用层。
+// 固定可信服务端目标 + 超时 + 明确的错误分类；绝不回显上游异常或密钥。
 
-const ENDPOINT = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
-// 模型可用性随账号开通情况不同，按顺序取第一个可用者。
-export const MODEL_CANDIDATES = ["qwen3-vl-plus", "qwen3-vl-max", "qwen-vl-max-latest"];
+const ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/chat/completions";
+// 模型 ID 在方舟控制台开通后可直接使用；可用环境变量 ARK_MODEL 覆盖。
+export const DEFAULT_MODEL = "doubao-seed-2-1-lite-260915";
 export const TIMEOUT_MS = 60_000;
 
 export type UserContent =
@@ -13,7 +13,7 @@ export type UserContent =
 export type ModelCall =
   | { kind: "ok"; content: string }
   | { kind: "timeout" }
-  | { kind: "rejected" };
+  | { kind: "http"; status: number };
 
 export async function callModel(
   apiKey: string,
@@ -40,6 +40,8 @@ export async function callModel(
           { role: "user", content: user },
         ],
         temperature: 0,
+        // 识题与讲解都是有界输出，关闭深度思考以控制时延与费用。
+        thinking: { type: "disabled" },
       }),
     });
   } catch {
@@ -48,14 +50,14 @@ export async function callModel(
     clearTimeout(timer);
   }
 
-  if (!response.ok) return { kind: "rejected" };
+  if (!response.ok) return { kind: "http", status: response.status };
 
   try {
     const data = await response.json() as { choices?: { message?: { content?: unknown } }[] };
     const raw = data.choices?.[0]?.message?.content;
     return { kind: "ok", content: typeof raw === "string" ? raw : "" };
   } catch {
-    return { kind: "rejected" };
+    return { kind: "http", status: 502 };
   }
 }
 
@@ -63,7 +65,15 @@ export type JsonCall =
   | { ok: true; value: unknown }
   | { ok: false; status: number; error: string };
 
-/** 依次尝试候选模型，取回第一个可解析的 JSON 对象。 */
+/** 把上游 HTTP 状态归入应用自有错误码，避免与网关的 401/403 混淆。 */
+function upstreamFailure(status: number, prefix: "recognize" | "explain"): { status: number; error: string } {
+  if (status === 401 || status === 403) return { status: 502, error: `${prefix}_upstream_auth` };
+  if (status === 404) return { status: 502, error: `${prefix}_model_unavailable` };
+  if (status === 429) return { status: 429, error: `${prefix}_rate_limited` };
+  return { status: 502, error: `${prefix}_upstream_error` };
+}
+
+/** 调用一次模型并解析 JSON 对象；错误码按 badResponseError 前缀归类。 */
 export async function completeJson(
   apiKey: string,
   system: string,
@@ -71,18 +81,13 @@ export async function completeJson(
   badResponseError: string,
   timeoutError = "recognize_timeout",
 ): Promise<JsonCall> {
-  let content: string | null = null;
-  for (const model of MODEL_CANDIDATES) {
-    const call = await callModel(apiKey, model, system, user);
-    if (call.kind === "ok") {
-      content = call.content;
-      break;
-    }
-    if (call.kind === "timeout") return { ok: false, status: 504, error: timeoutError };
-  }
-  if (content === null) return { ok: false, status: 502, error: "recognize_upstream_error" };
+  const prefix = badResponseError.startsWith("explain") ? "explain" : "recognize";
+  const model = Deno.env.get("ARK_MODEL")?.trim() || DEFAULT_MODEL;
+  const call = await callModel(apiKey, model, system, user);
+  if (call.kind === "timeout") return { ok: false, status: 504, error: timeoutError };
+  if (call.kind === "http") return { ok: false, ...upstreamFailure(call.status, prefix) };
 
-  const cleaned = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const cleaned = call.content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   try {
     return { ok: true, value: JSON.parse(cleaned) };
   } catch {

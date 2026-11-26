@@ -1,5 +1,5 @@
 // 识题：图片 and/or 文字 → 结构化题目 + 用户提问。
-// 调用阿里云百炼 DashScope 的千问视觉模型（OpenAI 兼容端点），共用 llm.ts 的回退与超时策略。
+// 调用火山方舟 Ark 的多模态模型（OpenAI 兼容端点），共用 llm.ts 的超时与错误分类。
 
 import { validateProblem, type Problem } from "./schema.ts";
 import { completeJson, declaredError, stringList, type UserContent } from "./llm.ts";

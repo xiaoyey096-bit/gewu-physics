@@ -68,10 +68,12 @@ npm run check:function # deno check functions/index.ts
 `/functions/v1/app/*` 请求代理到 `127.0.0.1:8000`；线上则由 Qoder Sites 网关直接路由到 Edge Function，
 本地代理配置不代表线上路由。只跑 `npm run dev` 也能看动画、题解、导出等全部本地功能。
 
-本地没有 `DASHSCOPE_API_KEY`，因此 `/app/recognize`、`/app/explain` 返回 503
+本地默认没有 `ARK_API_KEY`，因此 `/app/recognize`、`/app/explain` 返回 503
 `service_not_configured`、`/app/health` 里 `recognizeConfigured:false` —— 这是设计如此：
-密钥只存在于站点的服务端环境变量中，由管理员在部署平台上手工填写，从不进入代码、仓库或本地终端。
-带密钥的链路只能在发布后验证。
+密钥只存在于站点的服务端环境变量中，由管理员在部署平台上手工填写，从不进入代码或仓库。
+本地要联调识别链路时，把 `ARK_API_KEY=` 写进 `functions/.env`（已被 gitignore，模板见
+`functions/.env.example`），`npm run dev:function` 会自动读取；模型默认
+`doubao-seed-2-1-lite-260915`，可用 `ARK_MODEL` 覆盖。
 
 ## 实测验收
 
@@ -112,7 +114,7 @@ vendor/         第三方样式表原件及其许可证
 ## 发布
 
 构建产物为 `dist/`，服务端代码为 `functions/`，通过 Qoder Sites 的 `prepare_site` →
-`publish_site` 流程发布；密钥以 `secretNames:["DASHSCOPE_API_KEY"]` 声明，值只在平台侧录入。
+`publish_site` 流程发布；密钥以 `secretNames:["ARK_API_KEY"]` 声明，值只在平台侧录入。
 部署不上传 `dev/`、`node_modules` 或源码。
 
 ## 来源

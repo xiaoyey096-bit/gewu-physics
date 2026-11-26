@@ -50,7 +50,7 @@ export async function handler(request: Request): Promise<Response> {
       schemaVersion: 1,
       templates: ["projectile", "incline", "blockBoard", "collision1d"],
       // 只暴露"是否已配置"，绝不暴露密钥本身。
-      recognizeConfigured: Boolean(Deno.env.get("DASHSCOPE_API_KEY")),
+      recognizeConfigured: Boolean(Deno.env.get("ARK_API_KEY")),
     });
   }
 
@@ -58,7 +58,7 @@ export async function handler(request: Request): Promise<Response> {
     if (request.method !== "POST") {
       return json(405, { ok: false, error: "method_not_allowed" }, { Allow: "POST" });
     }
-    const apiKey = Deno.env.get("DASHSCOPE_API_KEY");
+    const apiKey = Deno.env.get("ARK_API_KEY");
     if (!apiKey) return json(503, { ok: false, error: "service_not_configured" });
     const body = await readJsonBody(request);
     if (!body) return json(400, { ok: false, error: "invalid_body" });
@@ -73,7 +73,7 @@ export async function handler(request: Request): Promise<Response> {
     if (request.method !== "POST") {
       return json(405, { ok: false, error: "method_not_allowed" }, { Allow: "POST" });
     }
-    const apiKey = Deno.env.get("DASHSCOPE_API_KEY");
+    const apiKey = Deno.env.get("ARK_API_KEY");
     if (!apiKey) return json(503, { ok: false, error: "service_not_configured" });
     const body = await readJsonBody(request);
     if (!body) return json(400, { ok: false, error: "invalid_body" });
