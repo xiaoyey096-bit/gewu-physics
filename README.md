@@ -90,7 +90,8 @@ BASE=http://127.0.0.1:5173 node dev/v8-forces.mjs
 `v4-export`（PNG / MP4，含真实解码校验）、`v4-motion`（临界态与能量守恒数值）、
 `v5-audit`（照片入口降级、题干/提问拆分、参数极值）、`v6-templates`（多模型）、
 `v7-folders`（项目分组、子文件夹、示例题库只播种一次）、
-`v8-forces`（受力分析与临界状态）、`v10-upload`（真实 docx / pdf 文件走上传链路）。
+`v8-forces`（受力分析与临界状态）、`v10-upload`（真实 docx / pdf 文件走上传链路）、
+`v11-intake`（拦截识别请求：不支持题型不得伪造题目、显式本地解析、照片弹层滚轮缩放）。
 
 通过口径：`consoleErrors` 为空、画布有实际绘制像素、导出文件真实生成且能被解码。
 报告与截图落在 `dev/downloads/`，该目录不参与站点构建，也不要提交。

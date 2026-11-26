@@ -2,7 +2,7 @@
 // 保留 401/403 处理、网关错误映射与成功载荷校验；错误文案为应用自有的中文映射。
 
 export class ApiError extends Error {
-  constructor(message: string, readonly code: string, readonly status: number = 0) {
+  constructor(message: string, readonly code: string, readonly status: number = 0, readonly reason?: string) {
     super(message);
     this.name = "ApiError";
   }
@@ -28,7 +28,7 @@ const DEFAULT_MESSAGES: Readonly<Record<string, string>> = {
   explain_rate_limited: "讲解请求过于频繁，请稍后再试。",
   explain_bad_response: "AI 讲解返回异常，请稍后重试。",
   unreadable_image: "图片不够清晰，无法辨认题目内容。",
-  unsupported_problem: "这道题暂不支持。当前版本仅支持抛体类题目。",
+  unsupported_problem: "当前版本支持抛体、斜面、滑块木板、一维碰撞四类题。",
   access_denied: "没有访问权限。",
   request_failed: "请求失败，请稍后重试。",
 };
@@ -80,7 +80,7 @@ export async function requestJson(
       : Object.prototype.hasOwnProperty.call(DEFAULT_MESSAGES, resolved)
         ? DEFAULT_MESSAGES[resolved]
         : DEFAULT_MESSAGES.request_failed;
-    throw new ApiError(message, resolved, response.status);
+    throw new ApiError(message, resolved, response.status, typeof body?.reason === "string" ? body.reason : undefined);
   }
   return data;
 }

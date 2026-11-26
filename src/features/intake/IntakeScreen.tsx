@@ -41,6 +41,24 @@ interface Draft {
   notice?: string;
 }
 
+interface IntakeFailure {
+  code: string;
+  message: string;
+  reason?: string;
+}
+
+function failureTitle(code: string): string {
+  if (code === "unsupported_problem") return "这道题暂不支持";
+  if (code === "unreadable_image") return "图片不够清晰";
+  if (code === "image_too_large") return "图片过大";
+  if (code.endsWith("_rate_limited")) return "识别请求太频繁";
+  if (
+    code === "service_not_configured" || code === "network_error" || code === "invalid_response" ||
+    code.endsWith("_upstream_auth") || code.endsWith("_model_unavailable") || code.endsWith("_upstream_error")
+  ) return "识别服务暂时不可用";
+  return "识别没有完成";
+}
+
 interface Props {
   configured: boolean | null;
   onCreated: (id: string) => void;
@@ -58,6 +76,7 @@ export function IntakeScreen({ configured, onCreated }: Props) {
   const [fileBusy, setFileBusy] = useState(false);
   const [fileNotice, setFileNotice] = useState<string | undefined>();
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [failure, setFailure] = useState<IntakeFailure | null>(null);
   const [zoomOpen, setZoomOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
@@ -112,6 +131,18 @@ export function IntakeScreen({ configured, onCreated }: Props) {
     return () => window.removeEventListener("paste", onPaste);
   }, [stage, acceptFile]);
 
+  const buildDraft = (problem: Problem, questions: string[], source: SessionSource, notice?: string): Draft => ({
+    template: problem.template,
+    statement: problem.statement,
+    questions,
+    params: problem.params,
+    ask: problem.ask?.length ? problem.ask : templateMeta(problem.template).asks,
+    image,
+    imageName,
+    source,
+    notice,
+  });
+
   const submit = async () => {
     const trimmed = text.trim();
     if (!image && !trimmed) {
@@ -121,10 +152,7 @@ export function IntakeScreen({ configured, onCreated }: Props) {
     }
     setBusy(true);
     setError(null);
-    const localSplit = splitStatementAndQuestions(trimmed);
-    let problem: Problem;
-    let questions: string[];
-    let notice: string | undefined;
+    setFailure(null);
     const source: SessionSource = image ? "photo" : "text";
 
     if (configured === true) {
@@ -136,53 +164,63 @@ export function IntakeScreen({ configured, onCreated }: Props) {
         if (!data?.problem || !TEMPLATE_IDS.includes(data.problem.template)) {
           throw new ApiError("识别结果不完整，请重试。", "invalid_response");
         }
-        problem = data.problem;
-        questions = (data.questions ?? []).filter((q) => typeof q === "string" && q.trim());
-        if (!questions.length) questions = localSplit.questions;
+        const questions = (data.questions ?? []).filter((q) => typeof q === "string" && q.trim());
+        setDraft(buildDraft(data.problem, questions.length ? questions : splitStatementAndQuestions(trimmed).questions, source));
+        setBusy(false);
+        setStage("confirm");
+        return;
       } catch (e) {
-        const msg = e instanceof ApiError ? e.message : "识别失败，请稍后重试。";
-        const parsed = parseParamsFromText(trimmed);
-        problem = {
-          version: 1,
-          template: parsed.template,
-          statement:
-            localSplit.statement ||
-            trimmed ||
-            (image ? "（图片题目）云端识别未成功，请补充题干或直接校正下方参数。" : "（未提供题干）"),
-          params: parsed.params,
-          ask: templateMeta(parsed.template).asks,
-        };
-        questions = localSplit.questions;
-        notice = `${msg} 已改用本地解析，请校正参数后再生成动画。`;
+        setFailure(
+          e instanceof ApiError
+            ? { code: e.code, message: e.message, reason: e.reason }
+            : { code: "network_error", message: "识别失败，请稍后重试。" },
+        );
+        setStage("compose");
+        setBusy(false);
+        return;
       }
-    } else {
-      const parsed = parseParamsFromText(trimmed);
-      problem = {
-        version: 1,
-        template: parsed.template,
-        statement: localSplit.statement || trimmed || "（未提供题干，可直接调整参数探究）",
-        params: parsed.params,
-        ask: templateMeta(parsed.template).asks,
-      };
-      questions = localSplit.questions;
-      notice =
-        configured === false
-          ? `识题服务未配置：已按本地规则解析文本${image ? "（图片不参与本地解析）" : ""}。${parsed.assumed.length ? "未识别的量：" + parsed.assumed.join("、") + "。" : ""}`
-          : undefined;
     }
 
-    setDraft({
-      template: problem.template,
-      statement: problem.statement,
-      questions,
-      params: problem.params,
-      ask: problem.ask?.length ? problem.ask : templateMeta(problem.template).asks,
-      image,
-      imageName,
+    const localSplit = splitStatementAndQuestions(trimmed);
+    const parsed = parseParamsFromText(trimmed);
+    const problem: Problem = {
+      version: 1,
+      template: parsed.template,
+      statement:
+        localSplit.statement ||
+        trimmed ||
+        (image ? "（图片题目）云端识别未开启，请补充题干或直接校正下方参数。" : "（未提供题干，可直接调整参数探究）"),
+      params: parsed.params,
+      ask: templateMeta(parsed.template).asks,
+    };
+    const assumed = parsed.assumed.length ? " 未识别的量取默认值：" + parsed.assumed.join("、") + "。" : "";
+    setDraft(buildDraft(
+      problem,
+      localSplit.questions,
       source,
-      notice,
-    });
+      configured === false
+        ? `识题服务未配置：已按本地规则解析文本${image ? "（图片不参与本地解析）" : ""}。${assumed}`
+        : `未能确认识题服务状态：已按本地规则解析文本。${assumed}`,
+    ));
     setBusy(false);
+    setStage("confirm");
+  };
+
+  const submitLocal = () => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const localSplit = splitStatementAndQuestions(trimmed);
+    const parsed = parseParamsFromText(trimmed);
+    const problem: Problem = {
+      version: 1,
+      template: parsed.template,
+      statement: localSplit.statement || trimmed,
+      params: parsed.params,
+      ask: templateMeta(parsed.template).asks,
+    };
+    const assumed = parsed.assumed.length ? "，未识别的量取默认值：" + parsed.assumed.join("、") : "";
+    setDraft(buildDraft(problem, localSplit.questions, image ? "photo" : "text", `已按本地规则解析文字${assumed}。请逐项核对参数。`));
+    setFailure(null);
     setStage("confirm");
   };
 
@@ -333,6 +371,27 @@ export function IntakeScreen({ configured, onCreated }: Props) {
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
+              {failure && (
+                <Alert className="mt-3">
+                  <AlertTitle>{failureTitle(failure.code)}</AlertTitle>
+                  <AlertDescription>
+                    <p>
+                      {failure.message}
+                      {failure.reason ? `（${failure.reason}）` : ""}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button variant="outline" size="xs" disabled={busy} onClick={() => void submit()}>
+                        重新识别
+                      </Button>
+                      {text.trim() && (
+                        <Button variant="outline" size="xs" onClick={submitLocal}>
+                          按本地规则解析文字
+                        </Button>
+                      )}
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              )}
               {configured === false && (
                 <Alert className="mt-3">
                   <AlertTitle>识题服务未配置</AlertTitle>
@@ -359,7 +418,7 @@ export function IntakeScreen({ configured, onCreated }: Props) {
 
             {draft.notice && (
               <Alert className="gw-rise">
-                <AlertTitle>已降级为本地解析</AlertTitle>
+                <AlertTitle>本地解析结果</AlertTitle>
                 <AlertDescription>{draft.notice}</AlertDescription>
               </Alert>
             )}
@@ -490,7 +549,7 @@ export function IntakeScreen({ configured, onCreated }: Props) {
                   size="lg"
                   variant="outline"
                   disabled={busy}
-                  onClick={() => { setStage("compose"); void submit(); }}
+                  onClick={() => { void submit(); }}
                 >
                   {busy ? <Spinner /> : <Wand2 />} 重新识别
                 </Button>
